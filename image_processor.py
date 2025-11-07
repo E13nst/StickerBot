@@ -2,6 +2,8 @@ from PIL import Image, ImageOps
 import io
 import logging
 
+from config import STICKER_SIZE, STICKER_MAX_SIZE, WEBP_QUALITY
+
 logger = logging.getLogger(__name__)
 
 

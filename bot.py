@@ -1,8 +1,8 @@
 import logging
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, Filters,
-    ConversationHandler, CallbackContext
+    Application, CommandHandler, MessageHandler, filters,
+    ConversationHandler, ContextTypes
 )
 from config import BOT_TOKEN, ADMIN_IDS
 from image_processor import ImageProcessor
@@ -33,17 +33,17 @@ class StickerBot:
             entry_points=[CommandHandler('start', self.start)],
             states={
                 CHOOSING_ACTION: [
-                    MessageHandler(Filters.regex('^(Создать новый стикерсет)$'), self.create_new_set),
-                    MessageHandler(Filters.regex('^(Добавить в существующий)$'), self.add_to_existing),
+                    MessageHandler(filters.Regex('^(Создать новый стикерсет)$'), self.create_new_set),
+                    MessageHandler(filters.Regex('^(Добавить в существующий)$'), self.add_to_existing),
                 ],
                 WAITING_STICKER: [
-                    MessageHandler(Filters.photo | Filters.document, self.handle_sticker)
+                    MessageHandler(filters.PHOTO | filters.Document.ALL, self.handle_sticker)
                 ],
                 WAITING_EMOJI: [
-                    MessageHandler(Filters.text & ~Filters.command, self.handle_emoji)
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_emoji)
                 ],
                 WAITING_TITLE: [
-                    MessageHandler(Filters.text & ~Filters.command, self.handle_title)
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_title)
                 ],
             },
             fallbacks=[CommandHandler('cancel', self.cancel)]
@@ -51,7 +51,7 @@ class StickerBot:
 
         self.application.add_handler(conv_handler)
 
-    async def start(self, update: Update, context: CallbackContext) -> int:
+    async def start(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Начало диалога"""
         user = update.message.from_user
 
@@ -69,7 +69,7 @@ class StickerBot:
 
         return CHOOSING_ACTION
 
-    async def create_new_set(self, update: Update, context: CallbackContext) -> int:
+    async def create_new_set(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Создание нового стикерсета"""
         await update.message.reply_text(
             "Отлично! Создаем новый стикерсет.\n"
@@ -80,7 +80,7 @@ class StickerBot:
         self.user_data[update.effective_user.id] = {'action': 'create_new'}
         return WAITING_STICKER
 
-    async def add_to_existing(self, update: Update, context: CallbackContext) -> int:
+    async def add_to_existing(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Добавление стикера в существующий стикерсет"""
         await update.message.reply_text(
             "Добавляем стикер в существующий стикерсет.\n"
@@ -91,15 +91,15 @@ class StickerBot:
         self.user_data[update.effective_user.id] = {'action': 'add_existing'}
         return WAITING_STICKER
 
-    async def handle_sticker(self, update: Update, context: CallbackContext) -> int:
+    async def handle_sticker(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Обработка присланного изображения"""
         user_id = update.effective_user.id
 
         try:
             # Получаем файл изображения
-            if update.message.photo:
+            if update.message and update.message.photo:
                 photo_file = await update.message.photo[-1].get_file()
-            elif update.message.document:
+            elif update.message and update.message.document:
                 photo_file = await update.message.document.get_file()
             else:
                 await update.message.reply_text("Пожалуйста, пришли изображение.")
@@ -130,7 +130,7 @@ class StickerBot:
             )
             return WAITING_STICKER
 
-    async def handle_emoji(self, update: Update, context: CallbackContext) -> int:
+    async def handle_emoji(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Обработка эмодзи"""
         user_id = update.effective_user.id
         emoji = update.message.text
@@ -149,7 +149,7 @@ class StickerBot:
             )
             return WAITING_TITLE
 
-    async def handle_title(self, update: Update, context: CallbackContext) -> int:
+    async def handle_title(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Обработка названия стикерсета"""
         user_id = update.effective_user.id
         title_or_name = update.message.text
@@ -172,10 +172,12 @@ class StickerBot:
                 )
 
                 if success:
+                    sticker_set_link = f"https://t.me/addstickers/{sticker_set_name}"
                     await update.message.reply_text(
                         f"🎉 Стикерсет успешно создан!\n"
                         f"Название: {title_or_name}\n"
                         f"Эмодзи: {emoji}\n\n"
+                        f"Добавить набор: {sticker_set_link}\n"
                         f"Теперь ты можешь добавить больше стикеров командой /start"
                     )
                 else:
@@ -215,7 +217,7 @@ class StickerBot:
             )
             return ConversationHandler.END
 
-    async def cancel(self, update: Update, context: CallbackContext) -> int:
+    async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Отмена диалога"""
         user_id = update.effective_user.id
         if user_id in self.user_data:
