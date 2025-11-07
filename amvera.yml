@@ -6,8 +6,9 @@ meta:
     name: pip
     version: 3.11
 build:
-  requirementsPath: requirements.txt
-  useCache: true
+  commands:
+    - pip install -r requirements.txt
+
 run:
   command: python bot.py
   persistenceMount: /data
