@@ -1,5 +1,5 @@
 ---
-version: null
+version: 1
 meta:
   environment: python
   toolchain:
@@ -8,6 +8,7 @@ meta:
 build:
   commands:
     - pip install -r requirements.txt
+  useCache: true
 
 run:
   command: python bot.py
