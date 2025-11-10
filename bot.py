@@ -5,7 +5,14 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, filters,
     ConversationHandler, ContextTypes
 )
-from config import BOT_TOKEN, ADMIN_IDS
+from config import (
+    BOT_TOKEN,
+    ADMIN_IDS,
+    GALLERY_BASE_URL,
+    GALLERY_SERVICE_TOKEN,
+    GALLERY_DEFAULT_LANGUAGE,
+)
+from gallery_client import GalleryClient
 from image_processor import ImageProcessor
 from sticker_manager import StickerManager
 
@@ -33,6 +40,11 @@ class StickerBot:
         self.application = Application.builder().token(BOT_TOKEN).build()
         self.sticker_manager = StickerManager(BOT_TOKEN)
         self.image_processor = ImageProcessor()
+        self.gallery_client = GalleryClient(
+            base_url=GALLERY_BASE_URL,
+            service_token=GALLERY_SERVICE_TOKEN,
+            default_language=GALLERY_DEFAULT_LANGUAGE,
+        )
         self.user_data = {}
 
         self.setup_handlers()
@@ -78,8 +90,8 @@ class StickerBot:
         reply_keyboard = [['Создать новый стикерсет', 'Добавить в существующий']]
 
         await update.message.reply_text(
-            f"Привет, {user.first_name}! Я помогу тебе создать стикерсет.\n"
-            "Выбери действие:",
+            f"Привет, {user.first_name}! Я помогу тебе собрать стикерсет.\n"
+            "Выбирай, что будем делать:",
             reply_markup=ReplyKeyboardMarkup(
                 reply_keyboard,
                 one_time_keyboard=True,
@@ -92,7 +104,7 @@ class StickerBot:
     async def create_new_set(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Создание нового стикерсета"""
         await update.message.reply_text(
-            "Пожалуйста, выберите название для нового набора стикеров.",
+            "Давай придумаем название для нового набора стикеров.",
             reply_markup=ReplyKeyboardRemove()
         )
 
@@ -119,7 +131,7 @@ class StickerBot:
         title = update.message.text.strip()
 
         if not title:
-            await update.message.reply_text("Название не может быть пустым. Попробуйте еще раз.")
+            await update.message.reply_text("Название не может быть пустым. Попробуй ещё раз.")
             return WAITING_NEW_TITLE
 
         user_data = self.user_data.get(user_id, {})
@@ -127,10 +139,10 @@ class StickerBot:
         self.user_data[user_id] = user_data
 
         await update.message.reply_text(
-            "Теперь пришлите, пожалуйста, будущий стикер — файл в формате PNG, JPG или WebP. "
-            "Рекомендуемое разрешение 512×512. Для лучшего качества отправьте изображение как файл (без сжатия), "
+            "Теперь пришли будущий стикер — файл в формате PNG, JPG или WebP. "
+            "Рекомендуемое разрешение 512×512. Для лучшего качества отправь изображение как файл (без сжатия), "
             "а не как фотографию.\n\n"
-            "Внимание: не загружайте изображения, защищённые авторскими правами.",
+            "Важно: пожалуйста, не загружай изображения, защищённые авторскими правами.",
             reply_markup=ReplyKeyboardRemove()
         )
 
@@ -141,7 +153,7 @@ class StickerBot:
         user_id = update.effective_user.id
 
         if user_id not in self.user_data or 'action' not in self.user_data[user_id]:
-            await update.message.reply_text("Что-то пошло не так. Запустите процесс заново командой /start.")
+            await update.message.reply_text("Что-то пошло не так. Запусти процесс заново командой /start.")
             return ConversationHandler.END
 
         try:
@@ -151,7 +163,7 @@ class StickerBot:
             elif update.message and update.message.document:
                 photo_file = await update.message.document.get_file()
             else:
-                await update.message.reply_text("Пожалуйста, пришли изображение.")
+                await update.message.reply_text("Пришли, пожалуйста, изображение.")
                 return WAITING_STICKER
 
             # Скачиваем изображение
@@ -167,7 +179,7 @@ class StickerBot:
             self.user_data[user_id]['current_webp'] = webp_data
 
             await update.message.reply_text(
-                "Пожалуйста, пришлите смайл, который соответствует этому стикеру.",
+                "Пришли смайл, который подходит к этому стикеру.",
                 reply_markup=ReplyKeyboardRemove()
             )
 
@@ -189,7 +201,7 @@ class StickerBot:
 
         if not action or 'current_webp' not in user_data:
             await update.message.reply_text(
-                "Не удалось сопоставить эмодзи с изображением. Попробуйте отправить стикер заново."
+                "Не получилось сопоставить эмодзи с картинкой. Попробуй отправить стикер ещё раз."
             )
             return WAITING_STICKER
 
@@ -205,9 +217,9 @@ class StickerBot:
             count = len(stickers)
 
             await update.message.reply_text(
-                f"Стикер добавлен. Количество стикеров в наборе: {count}. "
-                "Чтобы добавить еще один стикер, отправьте мне соответствующий файл в формате PNG, JPG или WebP.\n"
-                "Когда закончите, нажмите кнопку «Готово».",
+                f"Стикер добавлен! Теперь в наборе {count} шт. "
+                "Хочешь добавить ещё один — просто отправь файл в формате PNG, JPG или WebP.\n"
+                "Когда закончишь, нажми кнопку «Готово».",
                 reply_markup=ReplyKeyboardMarkup(
                     [['Готово']],
                     resize_keyboard=True,
@@ -227,7 +239,7 @@ class StickerBot:
             )
             return WAITING_EXISTING_NAME
 
-        await update.message.reply_text("Не удалось обработать эмодзи. Попробуйте снова.")
+        await update.message.reply_text("Не удалось обработать эмодзи. Попробуй ещё раз.")
         return WAITING_STICKER
 
     async def finish_sticker_collection(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -238,13 +250,13 @@ class StickerBot:
 
         if not stickers:
             await update.message.reply_text(
-                "В наборе пока нет ни одного стикера. Сначала добавьте хотя бы один стикер."
+                "В наборе пока нет ни одного стикера. Сначала добавь хотя бы один."
             )
             return WAITING_STICKER
 
         await update.message.reply_text(
-            "Пожалуйста, выберите короткое название, которое будет использоваться в адресе вашего набора. "
-            "Я создам ссылку, которой вы сможете поделиться с друзьями и подписчиками.",
+            "Теперь выбери короткое название, которое будет использоваться в адресе набора. "
+            "Я сделаю ссылку, которой ты сможешь поделиться с друзьями и подписчиками.",
             reply_markup=ReplyKeyboardRemove()
         )
 
@@ -253,7 +265,7 @@ class StickerBot:
     async def prompt_waiting_for_more(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Подсказка пользователю, если ожидается файл или завершение"""
         await update.message.reply_text(
-            "Чтобы продолжить, отправьте файл следующего стикера или нажмите кнопку «Готово», когда закончите.",
+            "Чтобы продолжить, отправь файл следующего стикера или нажми кнопку «Готово», когда закончишь.",
             reply_markup=ReplyKeyboardMarkup(
                 [['Готово']],
                 resize_keyboard=True,
@@ -269,13 +281,13 @@ class StickerBot:
         user_data = self.user_data.get(user_id)
 
         if not user_data or user_data.get('action') != 'create_new':
-            await update.message.reply_text("Процесс создания набора не найден. Начните заново с /start.")
+            await update.message.reply_text("Процесс создания набора не найден. Начни заново с /start.")
             return ConversationHandler.END
 
         if not re.fullmatch(r'[A-Za-z0-9_]{3,64}', short_name):
             await update.message.reply_text(
-                "Название может содержать только латинские буквы, цифры и символ подчёркивания. "
-                "Минимум 3 символа. Попробуйте другое имя."
+                "Имя может содержать только латинские буквы, цифры и подчёркивание. "
+                "Минимум 3 символа. Попробуй другое."
             )
             return WAITING_SHORT_NAME
 
@@ -287,18 +299,18 @@ class StickerBot:
 
         if availability is None:
             await update.message.reply_text(
-                "Не удалось проверить доступность имени. Попробуйте позже или введите другое название."
+                "Не получилось проверить доступность имени. Попробуй позже или введи другое."
             )
             return WAITING_SHORT_NAME
 
         if not availability:
             await update.message.reply_text(
-                "Такое короткое название уже занято. Пожалуйста, предложите другое."
+                "Такое короткое имя уже занято. Придумай другое."
             )
             return WAITING_SHORT_NAME
 
         if not stickers or not title:
-            await update.message.reply_text("Недостаточно данных для создания стикерсета. Начните заново с /start.")
+            await update.message.reply_text("Недостаточно данных для создания стикерсета. Начни заново с /start.")
             self.user_data.pop(user_id, None)
             return ConversationHandler.END
 
@@ -314,7 +326,7 @@ class StickerBot:
 
         if not created:
             await update.message.reply_text(
-                "Не удалось создать стикерсет. Попробуйте выбрать другое короткое название или начать заново."
+                "Не получилось создать стикерсет. Попробуй выбрать другое короткое имя или начни заново."
             )
             return WAITING_SHORT_NAME
 
@@ -340,8 +352,24 @@ class StickerBot:
         if failed_additions:
             message += (
                 f"\n\n⚠️ Не удалось добавить {failed_additions} стикеров. "
-                "Вы можете добавить их вручную позже."
+                "Ты можешь закинуть их вручную позже."
             )
+
+        gallery_saved = False
+        if self.gallery_client.is_configured():
+            gallery_saved = self.gallery_client.save_sticker_set(
+                user_id=user_id,
+                sticker_set_link=sticker_set_link,
+                title=title,
+                is_public=False,
+                language=GALLERY_DEFAULT_LANGUAGE,
+            )
+
+            if not gallery_saved:
+                logger.warning("Не удалось сохранить стикерсет в галерее для пользователя %s", user_id)
+
+        if gallery_saved:
+            message += "\n\n✅ Я добавил этот набор в твою галерею."
 
         await update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
 
@@ -356,7 +384,7 @@ class StickerBot:
 
         if not set_name or 'current_webp' not in user_data or 'emoji' not in user_data:
             await update.message.reply_text(
-                "Не удалось добавить стикер. Попробуйте начать заново с /start."
+                "Не удалось добавить стикер. Попробуй начать заново с /start."
             )
             self.user_data.pop(user_id, None)
             return ConversationHandler.END
@@ -375,7 +403,7 @@ class StickerBot:
             )
         else:
             await update.message.reply_text(
-                "Не удалось добавить стикер. Проверь название стикерсета.",
+                "Не получилось добавить стикер. Проверь название стикерсета.",
                 reply_markup=ReplyKeyboardRemove()
             )
 
