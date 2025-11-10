@@ -22,6 +22,25 @@ class StickerManager:
             logger.error(f"Ошибка получения стикерсетов: {e}")
             return []
 
+    def is_sticker_set_available(self, name: str) -> Optional[bool]:
+        """Проверяет, доступно ли короткое имя стикерсета"""
+        try:
+            url = f"{self.base_url}/getStickerSet"
+            response = requests.get(url, params={'name': name}, timeout=10)
+            result = response.json()
+
+            if result.get('ok'):
+                return False
+
+            description = result.get('description', '')
+            if 'STICKERSET_INVALID' in description.upper():
+                return True
+
+            return False
+        except Exception as e:
+            logger.error(f"Ошибка проверки имени стикерсета: {e}")
+            return None
+
     def create_new_sticker_set(self, user_id: int, name: str, title: str,
                                png_sticker: bytes, emojis: str) -> bool:
         """Создает новый стикерсет"""
@@ -39,7 +58,7 @@ class StickerManager:
                 'emojis': emojis
             }
 
-            response = requests.post(url, data=data, files=files)
+            response = requests.post(url, data=data, files=files, timeout=30)
             result = response.json()
 
             if result.get('ok'):
@@ -68,7 +87,7 @@ class StickerManager:
                 'emojis': emojis
             }
 
-            response = requests.post(url, data=data, files=files)
+            response = requests.post(url, data=data, files=files, timeout=30)
             result = response.json()
 
             return result.get('ok', False)
