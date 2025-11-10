@@ -1,4 +1,5 @@
 import logging
+from logging.handlers import RotatingFileHandler
 import re
 from telegram import Update, ReplyKeyboardMarkup, ReplyKeyboardRemove
 from telegram.ext import (
@@ -11,6 +12,7 @@ from config import (
     GALLERY_BASE_URL,
     GALLERY_SERVICE_TOKEN,
     GALLERY_DEFAULT_LANGUAGE,
+    LOG_FILE_PATH,
 )
 from gallery_client import GalleryClient
 from image_processor import ImageProcessor
@@ -29,7 +31,11 @@ from sticker_manager import StickerManager
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    level=logging.INFO
+    level=logging.INFO,
+    handlers=[
+        logging.StreamHandler(),
+        RotatingFileHandler(LOG_FILE_PATH, maxBytes=1_000_000, backupCount=3)
+    ]
 )
 
 logger = logging.getLogger(__name__)
@@ -37,6 +43,7 @@ logger = logging.getLogger(__name__)
 
 class StickerBot:
     def __init__(self):
+        self._validate_configuration()
         self.application = Application.builder().token(BOT_TOKEN).build()
         self.sticker_manager = StickerManager(BOT_TOKEN)
         self.image_processor = ImageProcessor()
@@ -48,6 +55,23 @@ class StickerBot:
         self.user_data = {}
 
         self.setup_handlers()
+
+    @staticmethod
+    def _validate_configuration():
+        missing = []
+
+        if not BOT_TOKEN:
+            missing.append('BOT_TOKEN')
+        if not GALLERY_BASE_URL:
+            missing.append('GALLERY_BASE_URL')
+        if not GALLERY_SERVICE_TOKEN:
+            missing.append('GALLERY_SERVICE_TOKEN')
+
+        if missing:
+            raise ValueError(
+                f"Не заданы необходимые переменные окружения: {', '.join(missing)}. "
+                "Проверь .env или окружение и перезапусти бота."
+            )
 
     def setup_handlers(self):
         conv_handler = ConversationHandler(

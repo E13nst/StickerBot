@@ -51,6 +51,11 @@ class GalleryClient:
             response = requests.post(url, params=params, json=payload, headers=headers, timeout=10)
 
             if response.status_code == 201:
+                logger.info(
+                    "Sticker set saved to gallery (user_id=%s, name=%s)",
+                    user_id,
+                    sticker_set_link,
+                )
                 return True
 
             logger.error(
