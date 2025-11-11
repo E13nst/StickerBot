@@ -30,7 +30,8 @@ from sticker_manager import StickerManager
     WAITING_SHORT_NAME,
     WAITING_EXISTING_CHOICE,
     WAITING_PUBLISH_DECISION,
-) = range(8)
+    WAITING_MANAGE_CHOICE,
+) = range(9)
 
 PAGE_PREV_LABEL = '⬅️ Назад'
 PAGE_NEXT_LABEL = '➡️ Вперед'
@@ -86,6 +87,7 @@ class StickerBot:
                 CHOOSING_ACTION: [
                     MessageHandler(filters.Regex('^(Создать новый стикерсет)$'), self.create_new_set),
                     MessageHandler(filters.Regex('^(Добавить в существующий)$'), self.add_to_existing),
+                    MessageHandler(filters.Regex('^(Управлять публикацией)$'), self.manage_publication),
                 ],
                 WAITING_NEW_TITLE: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_new_set_title)
@@ -112,6 +114,10 @@ class StickerBot:
                     CallbackQueryHandler(self.handle_publish_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_publish_choice_text),
                 ],
+                WAITING_MANAGE_CHOICE: [
+                    CallbackQueryHandler(self.handle_manage_choice),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_manage_choice_text),
+                ],
             },
             fallbacks=[CommandHandler('cancel', self.cancel)],
             allow_reentry=True
@@ -125,16 +131,19 @@ class StickerBot:
         user = update.message.from_user
         context.user_data.clear()
 
-        reply_keyboard = [['Создать новый стикерсет', 'Добавить в существующий']]
+        reply_keyboard = [
+            ['Создать новый стикерсет', 'Добавить в существующий'],
+            ['Управлять публикацией']
+        ]
 
         await update.message.reply_text(
             f"Привет, {user.first_name}! Я помогу тебе собрать стикерсет.\n"
             "Выбирай, что будем делать:",
-                reply_markup=ReplyKeyboardMarkup(
-                    reply_keyboard,
-                    one_time_keyboard=True,
-                    input_field_placeholder='Что будем делать?'
-                )
+            reply_markup=ReplyKeyboardMarkup(
+                reply_keyboard,
+                one_time_keyboard=True,
+                input_field_placeholder='Что будем делать?'
+            )
         )
 
         return CHOOSING_ACTION
@@ -163,6 +172,17 @@ class StickerBot:
         context.user_data.clear()
         context.user_data['action'] = 'add_existing'
         return await self.show_existing_sets(update, context, page=0)
+
+    async def manage_publication(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Управление публикацией наборов"""
+        await update.message.reply_text(
+            "Выбираем набор для изменения статуса публикации:",
+            reply_markup=ReplyKeyboardRemove()
+        )
+
+        context.user_data.clear()
+        context.user_data['action'] = 'manage_publication'
+        return await self.show_manage_sets(update, context, page=0)
 
     async def handle_new_set_title(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Обработка пользовательского названия нового стикерсета"""
@@ -307,7 +327,7 @@ class StickerBot:
                 )
                 return WAITING_DECISION
 
-            else:
+        else:
                 await update.message.reply_text(
                     "Не получилось добавить стикер. Попробуй снова или выбери другой набор.",
                     reply_markup=ReplyKeyboardRemove()
@@ -389,7 +409,7 @@ class StickerBot:
 
         result = await asyncio.to_thread(
             self.gallery_client.get_user_sticker_sets,
-            user_id=user_id,
+                    user_id=user_id,
             language=GALLERY_DEFAULT_LANGUAGE,
             page=page,
             size=10,
@@ -529,10 +549,206 @@ class StickerBot:
 
     async def handle_existing_choice_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Подсказка, если пользователь отправил текст вместо использования кнопок"""
-        await update.message.reply_text(
+                    await update.message.reply_text(
             "Пожалуйста, выбери набор с помощью кнопок ниже."
         )
         return WAITING_EXISTING_CHOICE
+
+    async def show_manage_sets(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int) -> int:
+        """Отображение наборов для управления публикацией"""
+        user_id = update.effective_user.id
+        user_data = context.user_data
+
+        result = await asyncio.to_thread(
+            self.gallery_client.get_user_sticker_sets,
+            user_id=user_id,
+            language=GALLERY_DEFAULT_LANGUAGE,
+            page=page,
+            size=10,
+            sort='createdAt',
+            direction='DESC',
+            short_info=True
+        )
+
+        if result is None:
+            await update.effective_message.reply_text(
+                "Не удалось загрузить список наборов. Попробуй позже.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
+
+        items = result.get('content') or []
+        if not items:
+            await update.effective_message.reply_text(
+                "Пока нет ни одного набора. Создай его, а потом управляй публикацией здесь.",
+                reply_markup=ReplyKeyboardRemove()
+            )
+            context.user_data.clear()
+            return ConversationHandler.END
+
+        current_page = result.get('page', page) or 0
+        total_pages = result.get('totalPages', 1) or 1
+
+        user_data['manage_sets'] = items
+        user_data['manage_page'] = current_page
+        user_data['manage_total_pages'] = total_pages
+        user_data.pop('manage_selected', None)
+
+        icons = {True: '🌐', False: '🔒'}
+        lines = [
+            "Выбери набор, чтобы изменить статус публикации.",
+            f"Страница {current_page + 1} из {total_pages}"
+        ]
+
+        keyboard = self._build_manage_keyboard(items, current_page, total_pages, icons)
+
+        if update.callback_query:
+            query = update.callback_query
+            await query.edit_message_text(
+                "\n".join(lines),
+                reply_markup=keyboard
+                    )
+                else:
+                    await update.message.reply_text(
+                "\n".join(lines),
+                reply_markup=keyboard
+            )
+
+        return WAITING_MANAGE_CHOICE
+
+    def _build_manage_keyboard(self, items, page, total_pages, icons):
+        """Формирует inline-клавиатуру для управления публикацией"""
+        buttons = []
+        row = []
+        for index, item in enumerate(items):
+            title = item.get('title') or item.get('name')
+            icon = icons[bool(item.get('isPublic'))]
+            row.append(
+                InlineKeyboardButton(
+                    text=f"{icon} {title}",
+                    callback_data=f"manage:set:{index}"
+                )
+            )
+            if len(row) == 2:
+                buttons.append(row)
+                row = []
+        if row:
+            buttons.append(row)
+
+        nav_buttons = []
+        if page > 0:
+            nav_buttons.append(InlineKeyboardButton(PAGE_PREV_LABEL, callback_data='manage:page:prev'))
+        if page < total_pages - 1:
+            nav_buttons.append(InlineKeyboardButton(PAGE_NEXT_LABEL, callback_data='manage:page:next'))
+        if nav_buttons:
+            buttons.append(nav_buttons)
+
+        buttons.append([InlineKeyboardButton(CANCEL_LABEL, callback_data='manage:cancel')])
+        return InlineKeyboardMarkup(buttons)
+
+    async def handle_manage_choice(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Обработка выбора в управлении публикацией"""
+        query = update.callback_query
+        data = query.data
+        user_data = context.user_data
+
+        if user_data.get('action') != 'manage_publication':
+            await query.answer()
+            await query.edit_message_text("Процесс управления публикацией не найден. Начни заново с /start.")
+            context.user_data.clear()
+            return ConversationHandler.END
+
+        current_page = user_data.get('manage_page', 0)
+        total_pages = user_data.get('manage_total_pages', 1)
+
+        if data == 'manage:cancel':
+            await query.answer("Отменяем.")
+            await query.edit_message_text("Управление публикацией завершено. Возвращайся в любое время.")
+            context.user_data.clear()
+            return ConversationHandler.END
+
+        if data == 'manage:page:next':
+            if current_page < total_pages - 1:
+                await query.answer("Следующая страница")
+                return await self.show_manage_sets(update, context, page=current_page + 1)
+            await query.answer("Это последняя страница", show_alert=True)
+            return WAITING_MANAGE_CHOICE
+
+        if data == 'manage:page:prev':
+            if current_page > 0:
+                await query.answer("Предыдущая страница")
+                return await self.show_manage_sets(update, context, page=current_page - 1)
+            await query.answer("Это первая страница", show_alert=True)
+            return WAITING_MANAGE_CHOICE
+
+        if data == 'manage:back':
+            await query.answer()
+            return await self.show_manage_sets(update, context, page=user_data.get('manage_page', 0))
+
+        if data == 'manage:unpublish':
+            selected = user_data.get('manage_selected')
+            if not selected:
+                await query.answer("Набор не выбран.", show_alert=True)
+                return WAITING_MANAGE_CHOICE
+
+            success = await asyncio.to_thread(
+                self.gallery_client.unpublish_sticker_set,
+                sticker_set_id=selected.get('id'),
+                user_id=update.effective_user.id,
+                language=GALLERY_DEFAULT_LANGUAGE,
+                )
+
+                if success:
+                await query.edit_message_text(
+                    f"🔕 Набор {selected.get('title') or selected.get('name')} скрыт из галереи."
+                )
+                return await self.show_manage_sets(update, context, page=user_data.get('manage_page', 0))
+
+            await query.edit_message_text(
+                "Не удалось снять набор с публикации. Попробуй позже."
+            )
+            return WAITING_MANAGE_CHOICE
+
+        if data.startswith('manage:set:'):
+            index = int(data.split(':', 1)[1])
+            sets = user_data.get('manage_sets', [])
+            if 0 <= index < len(sets):
+                target_set = sets[index]
+                user_data['manage_selected'] = target_set
+
+                title = target_set.get('title') or target_set.get('name')
+                url = target_set.get('url') or f"https://t.me/addstickers/{target_set.get('name')}"
+                is_public = bool(target_set.get('isPublic'))
+
+                if is_public:
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("🔕 Снять с публикации", callback_data='manage:unpublish')],
+                        [InlineKeyboardButton("⬅️ Вернуться", callback_data='manage:back')]
+                    ])
+                    text = (
+                        f'Набор <a href="{html.escape(url, quote=True)}">{html.escape(title)}</a> сейчас публичный.\n'
+                        "Снять его из галереи?"
+                    )
+                else:
+                    keyboard = InlineKeyboardMarkup([
+                        [InlineKeyboardButton("⬅️ Вернуться", callback_data='manage:back')]
+                    ])
+                    text = (
+                        f'Набор <a href="{html.escape(url, quote=True)}">{html.escape(title)}</a> уже приватный.'
+                    )
+
+                await query.answer()
+                await query.edit_message_text(text, reply_markup=keyboard, parse_mode='HTML')
+                return WAITING_MANAGE_CHOICE
+
+        await query.answer("Не удалось обработать выбор", show_alert=True)
+        return WAITING_MANAGE_CHOICE
+
+    async def handle_manage_choice_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Подсказка при текстовом ответе в управлении публикацией"""
+        await update.message.reply_text("Пожалуйста, используй кнопки для управления публикацией.")
+        return WAITING_MANAGE_CHOICE
 
     async def _prompt_publish_choice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, title: str, link: str) -> None:
         """Предложение опубликовать набор в галерее"""
@@ -717,7 +933,7 @@ class StickerBot:
             return WAITING_PUBLISH_DECISION
 
         context.user_data.clear()
-        return ConversationHandler.END
+            return ConversationHandler.END
 
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Отмена диалога"""

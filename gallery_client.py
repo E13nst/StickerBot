@@ -122,6 +122,48 @@ class GalleryClient:
         except Exception as e:
             logger.error(f"Error publishing sticker set: {e}")
             return False
+
+    def unpublish_sticker_set(
+        self,
+        sticker_set_id: int,
+        user_id: int,
+        language: Optional[str] = None,
+    ) -> bool:
+        if not self.is_configured():
+            logger.warning("Gallery client is not configured. Skipping sticker set unpublish.")
+            return False
+
+        try:
+            url = f"{self.base_url}/internal/stickersets/{sticker_set_id}/unpublish"
+            params = {
+                'userId': user_id,
+            }
+            headers = {
+                'accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-Service-Token': self.service_token,
+                'X-Language': language or self.default_language,
+            }
+
+            response = requests.post(url, params=params, json={}, headers=headers, timeout=10)
+            if response.status_code == 200:
+                logger.info(
+                    "Sticker set unpublished (id=%s, user_id=%s)",
+                    sticker_set_id,
+                    user_id
+                )
+                return True
+
+            logger.error(
+                "Failed to unpublish sticker set. Status: %s, Response: %s",
+                response.status_code,
+                response.text,
+            )
+            return False
+
+        except Exception as e:
+            logger.error(f"Error unpublishing sticker set: {e}")
+            return False
     def get_user_sticker_sets(
         self,
         user_id: int,
