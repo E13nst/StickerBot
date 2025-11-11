@@ -18,14 +18,15 @@ class GalleryClient:
     def save_sticker_set(
         self,
         user_id: int,
+        sticker_set_id: Optional[int],
         sticker_set_link: str,
         title: Optional[str] = None,
         is_public: bool = False,
         language: Optional[str] = None,
-    ) -> bool:
+    ) -> Optional[Dict[str, Any]]:
         if not self.is_configured():
             logger.warning("Gallery client is not configured. Skipping sticker set registration.")
-            return False
+            return None
 
         try:
             url = f"{self.base_url}/internal/stickersets"
@@ -37,7 +38,11 @@ class GalleryClient:
             payload: Dict[str, Any] = {
                 'name': sticker_set_link,
                 'isPublic': is_public,
+                'authorId': user_id,
             }
+
+            if sticker_set_id is not None:
+                payload['stickerSetId'] = sticker_set_id
 
             if title:
                 payload['title'] = title
@@ -46,29 +51,77 @@ class GalleryClient:
                 'accept': 'application/json',
                 'Content-Type': 'application/json',
                 'X-Service-Token': self.service_token,
+                'X-Language': language or self.default_language,
             }
 
             response = requests.post(url, params=params, json=payload, headers=headers, timeout=10)
 
             if response.status_code == 201:
+                result = response.json()
                 logger.info(
-                    "Sticker set saved to gallery (user_id=%s, name=%s)",
+                    "Sticker set saved to gallery (user_id=%s, name=%s, id=%s)",
                     user_id,
                     sticker_set_link,
+                    result.get('id')
                 )
-                return True
+                return result
 
             logger.error(
                 "Failed to save sticker set to gallery. Status: %s, Response: %s",
                 response.status_code,
                 response.text,
             )
-            return False
+            return None
 
         except Exception as e:
             logger.error(f"Error saving sticker set to gallery: {e}")
+            return None
+
+    def publish_sticker_set(
+        self,
+        sticker_set_id: int,
+        user_id: int,
+        language: Optional[str] = None,
+        is_public: bool = True,
+    ) -> bool:
+        if not self.is_configured():
+            logger.warning("Gallery client is not configured. Skipping sticker set publish.")
             return False
 
+        try:
+            url = f"{self.base_url}/internal/stickersets/{sticker_set_id}/publish"
+            params = {
+                'userId': user_id,
+            }
+            payload: Dict[str, Any] = {
+                'isPublic': is_public,
+            }
+            headers = {
+                'accept': 'application/json',
+                'Content-Type': 'application/json',
+                'X-Service-Token': self.service_token,
+                'X-Language': language or self.default_language,
+            }
+
+            response = requests.post(url, params=params, json=payload, headers=headers, timeout=10)
+            if response.status_code == 200:
+                logger.info(
+                    "Sticker set published (id=%s, user_id=%s)",
+                    sticker_set_id,
+                    user_id
+                )
+                return True
+
+            logger.error(
+                "Failed to publish sticker set. Status: %s, Response: %s",
+                response.status_code,
+                response.text,
+            )
+            return False
+
+        except Exception as e:
+            logger.error(f"Error publishing sticker set: {e}")
+            return False
     def get_user_sticker_sets(
         self,
         user_id: int,

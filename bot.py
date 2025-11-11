@@ -29,7 +29,8 @@ from sticker_manager import StickerManager
     WAITING_DECISION,
     WAITING_SHORT_NAME,
     WAITING_EXISTING_CHOICE,
-) = range(7)
+    WAITING_PUBLISH_DECISION,
+) = range(8)
 
 PAGE_PREV_LABEL = '⬅️ Назад'
 PAGE_NEXT_LABEL = '➡️ Вперед'
@@ -106,6 +107,10 @@ class StickerBot:
                 WAITING_EXISTING_CHOICE: [
                     CallbackQueryHandler(self.handle_existing_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_existing_choice_text)
+                ],
+                WAITING_PUBLISH_DECISION: [
+                    CallbackQueryHandler(self.handle_publish_choice),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_publish_choice_text),
                 ],
             },
             fallbacks=[CommandHandler('cancel', self.cancel)],
@@ -529,6 +534,70 @@ class StickerBot:
         )
         return WAITING_EXISTING_CHOICE
 
+    async def _prompt_publish_choice(self, update: Update, context: ContextTypes.DEFAULT_TYPE, title: str, link: str) -> None:
+        """Предложение опубликовать набор в галерее"""
+        keyboard = InlineKeyboardMarkup([
+            [
+                InlineKeyboardButton("🚀 Опубликовать", callback_data='publish:yes')
+            ],
+            [
+                InlineKeyboardButton("Оставить приватным", callback_data='publish:no')
+            ]
+        ])
+
+        await update.message.reply_text(
+            f'Хочешь поделиться набором <a href="{html.escape(link, quote=True)}">{html.escape(title)}</a> '
+            'в галерее, чтобы его увидели другие?',
+            reply_markup=keyboard,
+            parse_mode='HTML'
+        )
+
+    async def handle_publish_choice(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Обработка решения опубликовать набор"""
+        query = update.callback_query
+        data = query.data
+        candidate = context.user_data.get('publish_candidate')
+
+        if not candidate:
+            await query.answer("Данных для публикации нет.", show_alert=True)
+            await query.edit_message_text("Процесс публикации не найден. Начни заново с /start.")
+            context.user_data.clear()
+            return ConversationHandler.END
+
+        await query.answer()
+
+        if data == 'publish:yes':
+            success = await asyncio.to_thread(
+                self.gallery_client.publish_sticker_set,
+                sticker_set_id=candidate.get('id'),
+                user_id=update.effective_user.id,
+                language=GALLERY_DEFAULT_LANGUAGE,
+                is_public=True,
+            )
+
+            if success:
+                await query.edit_message_text(
+                    "Готово! Набор опубликован в галерее. Делись ссылкой и собирай реакции 🚀"
+                )
+            else:
+                await query.edit_message_text(
+                    "Не удалось опубликовать набор. Попробуй позже или свяжись с поддержкой."
+                )
+        else:
+            await query.edit_message_text(
+                "Окей, оставим набор приватным. Если передумаешь, опубликовать можно позже."
+            )
+
+        context.user_data.clear()
+        return ConversationHandler.END
+
+    async def handle_publish_choice_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+        """Подсказка при текстовом ответе на предложение публикации"""
+        await update.message.reply_text(
+            "Пожалуйста, используй кнопки для выбора: опубликовать или оставить приватным."
+        )
+        return WAITING_PUBLISH_DECISION
+
 
     async def handle_short_name(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Проверка короткого имени и создание стикерсета"""
@@ -615,27 +684,37 @@ class StickerBot:
                 "Ты можешь закинуть их вручную позже."
             )
 
-        gallery_saved = False
+        gallery_record = None
         if self.gallery_client.is_configured():
-            gallery_saved = await asyncio.to_thread(
+            gallery_record = await asyncio.to_thread(
                 self.gallery_client.save_sticker_set,
                 user_id=update.effective_user.id,
+                sticker_set_id=None,
                 sticker_set_link=sticker_set_link,
                 title=title,
                 is_public=False,
                 language=GALLERY_DEFAULT_LANGUAGE,
             )
 
-            if not gallery_saved:
+            if not gallery_record:
                 logger.warning(
                     "Не удалось сохранить стикерсет в галерее для пользователя %s",
                     update.effective_user.id
                 )
 
-        if gallery_saved:
+        if gallery_record:
             message += "\n\n✅ Я добавил этот набор в твою галерею."
 
         await update.message.reply_text(message, reply_markup=ReplyKeyboardRemove())
+
+        if gallery_record and gallery_record.get('id'):
+            context.user_data['publish_candidate'] = {
+                'id': gallery_record.get('id'),
+                'title': title,
+                'link': sticker_set_link,
+            }
+            await self._prompt_publish_choice(update, context, title, sticker_set_link)
+            return WAITING_PUBLISH_DECISION
 
         context.user_data.clear()
         return ConversationHandler.END

@@ -42,8 +42,8 @@ class StickerManager:
             return None
 
     def create_new_sticker_set(self, user_id: int, name: str, title: str,
-                               png_sticker: bytes, emojis: str) -> bool:
-        """Создает новый стикерсет"""
+                               png_sticker: bytes, emojis: str) -> Optional[Dict]:
+        """Создает новый стикерсет и возвращает ответ API"""
         try:
             url = f"{self.base_url}/createNewStickerSet"
 
@@ -62,14 +62,14 @@ class StickerManager:
             result = response.json()
 
             if result.get('ok'):
-                return True
+                return result
             else:
                 logger.error(f"Ошибка создания стикерсета: {result}")
-                return False
+                return None
 
         except Exception as e:
             logger.error(f"Ошибка при создании стикерсета: {e}")
-            return False
+            return None
 
     def add_sticker_to_set(self, user_id: int, name: str,
                            png_sticker: bytes, emojis: str) -> bool:
