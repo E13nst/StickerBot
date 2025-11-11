@@ -328,11 +328,10 @@ class StickerBot:
                 return WAITING_DECISION
 
         else:
-                await update.message.reply_text(
-                    "Не получилось добавить стикер. Попробуй снова или выбери другой набор.",
-                    reply_markup=ReplyKeyboardRemove()
-                )
-
+            await update.message.reply_text(
+                "Не получилось добавить стикер. Попробуй снова или выбери другой набор.",
+                reply_markup=ReplyKeyboardRemove()
+            )
             return await self.show_existing_sets(update, context, page=user_data.get('existing_page', 0))
 
         await update.message.reply_text("Не удалось обработать эмодзи. Попробуй ещё раз.")
@@ -549,9 +548,7 @@ class StickerBot:
 
     async def handle_existing_choice_text(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Подсказка, если пользователь отправил текст вместо использования кнопок"""
-                    await update.message.reply_text(
-            "Пожалуйста, выбери набор с помощью кнопок ниже."
-        )
+        await update.message.reply_text("Пожалуйста, выбери набор с помощью кнопок ниже.")
         return WAITING_EXISTING_CHOICE
 
     async def show_manage_sets(self, update: Update, context: ContextTypes.DEFAULT_TYPE, page: int) -> int:
@@ -608,9 +605,9 @@ class StickerBot:
             await query.edit_message_text(
                 "\n".join(lines),
                 reply_markup=keyboard
-                    )
-                else:
-                    await update.message.reply_text(
+            )
+        else:
+            await update.message.reply_text(
                 "\n".join(lines),
                 reply_markup=keyboard
             )
@@ -699,7 +696,7 @@ class StickerBot:
                 language=GALLERY_DEFAULT_LANGUAGE,
                 )
 
-                if success:
+            if success:
                 await query.edit_message_text(
                     f"🔕 Набор {selected.get('title') or selected.get('name')} скрыт из галереи."
                 )
@@ -933,7 +930,7 @@ class StickerBot:
             return WAITING_PUBLISH_DECISION
 
         context.user_data.clear()
-            return ConversationHandler.END
+        return ConversationHandler.END
 
     async def cancel(self, update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         """Отмена диалога"""
