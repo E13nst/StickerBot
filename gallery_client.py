@@ -69,3 +69,48 @@ class GalleryClient:
             logger.error(f"Error saving sticker set to gallery: {e}")
             return False
 
+    def get_user_sticker_sets(
+        self,
+        user_id: int,
+        language: Optional[str] = None,
+        page: int = 0,
+        size: int = 10,
+        sort: str = 'createdAt',
+        direction: str = 'DESC',
+        short_info: bool = True,
+    ) -> Optional[Dict[str, Any]]:
+        if not self.is_configured():
+            logger.warning("Gallery client is not configured. Skipping sticker set fetch.")
+            return None
+
+        try:
+            url = f"{self.base_url}/internal/stickersets/author/{user_id}"
+            params = {
+                'page': page,
+                'size': size,
+                'sort': sort,
+                'direction': direction,
+                'shortInfo': str(short_info).lower(),
+            }
+            headers = {
+                'accept': 'application/json',
+                'X-Service-Token': self.service_token,
+                'X-Language': language or self.default_language,
+            }
+
+            response = requests.get(url, params=params, headers=headers, timeout=10)
+
+            if response.status_code == 200:
+                return response.json()
+
+            logger.error(
+                "Failed to fetch sticker sets from gallery. Status: %s, Response: %s",
+                response.status_code,
+                response.text,
+            )
+            return None
+
+        except Exception as e:
+            logger.error(f"Error fetching sticker sets from gallery: {e}")
+            return None
+
