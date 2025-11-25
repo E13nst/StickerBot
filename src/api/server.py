@@ -22,13 +22,13 @@ from src.api.routes.control import (
 
 logger = logging.getLogger(__name__)
 
+security = HTTPBearer()
+
 app = FastAPI(
     title="StickerBot Control API",
     description="API для управления ботом: переключение режимов polling/webhook, активация/деактивация",
     version="1.0.0"
 )
-
-security = HTTPBearer()
 
 # Инициализация routes
 init_control(security)

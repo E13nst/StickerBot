@@ -48,7 +48,10 @@ def get_config_manager() -> ConfigManager:
 
 
 async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(security)):
-    """Проверка токена аутентификации"""
+    """Проверка токена аутентификации
+    
+    Использует Bearer token из заголовка Authorization.
+    """
     if not API_TOKEN:
         raise HTTPException(status_code=500, detail="API_TOKEN не настроен")
     
