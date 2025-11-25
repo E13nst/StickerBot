@@ -25,7 +25,7 @@ async def start_bot_if_enabled():
     config_manager = ConfigManager(CONFIG_PATH)
     config = config_manager.get_config()
     
-    if not config.get('enabled', False):
+    if not config.get('enabled', True):
         logger.info("Бот отключен в конфиге, не запускаем")
         return
     

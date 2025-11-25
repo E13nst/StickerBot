@@ -14,7 +14,7 @@ class ConfigManager:
     _lock = threading.Lock()
     _default_config = {
         'mode': 'polling',
-        'enabled': False,
+        'enabled': True,
         'webhook_url': None
     }
     
