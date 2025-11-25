@@ -1,2 +1,10 @@
 /.env
 /.cursor/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.Python
+bot.log
+data/
+*.log
