@@ -1,4 +1,4 @@
-.PHONY: install run stop restart status clean
+.PHONY: install run stop restart status clean test lint format check help
 
 VENV ?= ./venv
 PYTHON := $(VENV)/bin/python
@@ -6,10 +6,34 @@ PIP := $(VENV)/bin/pip
 BOT_SCRIPT := main.py
 ENV_FILE := .env
 
-install:
+help:
+	@echo "Доступные команды:"
+	@echo "  make install    - Установить зависимости"
+	@echo "  make run        - Запустить бота"
+	@echo "  make stop       - Остановить бота"
+	@echo "  make restart    - Перезапустить бота"
+	@echo "  make status     - Проверить статус бота"
+	@echo "  make test        - Запустить тесты (если есть)"
+	@echo "  make lint        - Проверить код линтером"
+	@echo "  make check       - Проверить структуру проекта"
+	@echo "  make clean       - Очистить временные файлы"
+	@echo "  make venv        - Создать виртуальное окружение"
+
+venv:
+	@if [ ! -d $(VENV) ]; then \
+		python3 -m venv $(VENV); \
+		echo "Виртуальное окружение создано"; \
+	fi
+
+install: venv
+	$(PIP) install --upgrade pip
 	$(PIP) install -r requirements.txt
+	@echo "Зависимости установлены"
 
 run:
+	@if [ ! -f $(ENV_FILE) ]; then \
+		echo "⚠️  Внимание: файл .env не найден. Создайте его с необходимыми переменными окружения."; \
+	fi
 	@if [ -f $(ENV_FILE) ]; then \
 		set -a; \
 		. $(ENV_FILE); \
@@ -18,15 +42,43 @@ run:
 	$(PYTHON) $(BOT_SCRIPT)
 
 stop:
-	pkill -f "$(BOT_SCRIPT)" || true
+	@pkill -f "$(BOT_SCRIPT)" || echo "Бот не запущен"
 
 restart:
-	$(MAKE) stop || true
-	$(MAKE) run
+	@$(MAKE) stop || true
+	@sleep 1
+	@$(MAKE) run
 
 status:
-	pgrep -fal "$(BOT_SCRIPT)" || echo "bot.py is not running"
+	@if pgrep -f "$(BOT_SCRIPT)" > /dev/null; then \
+		echo "✅ Бот запущен:"; \
+		pgrep -fal "$(BOT_SCRIPT)"; \
+	else \
+		echo "❌ Бот не запущен"; \
+	fi
+
+test:
+	@echo "Запуск тестов..."
+	@$(PYTHON) -m pytest tests/ -v || echo "Тесты не найдены или pytest не установлен"
+
+check:
+	@echo "Проверка структуры проекта..."
+	@$(PYTHON) scripts/check_structure.py
+
+lint:
+	@echo "Проверка кода линтером..."
+	@$(PYTHON) -m flake8 src/ main.py scripts/ --max-line-length=120 --ignore=E501,W503 || echo "flake8 не установлен, пропускаем"
+	@$(PYTHON) -m pylint src/ main.py scripts/ --disable=all --enable=E,F || echo "pylint не установлен, пропускаем"
+
+format:
+	@echo "Форматирование кода..."
+	@$(PYTHON) -m black src/ main.py scripts/ --line-length=120 || echo "black не установлен, пропускаем"
 
 clean:
-	rm -rf __pycache__
+	@echo "Очистка временных файлов..."
+	@find . -type d -name "__pycache__" -exec rm -r {} + 2>/dev/null || true
+	@find . -type f -name "*.pyc" -delete 2>/dev/null || true
+	@find . -type f -name "*.pyo" -delete 2>/dev/null || true
+	@find . -type d -name "*.egg-info" -exec rm -r {} + 2>/dev/null || true
+	@echo "Очистка завершена"
 

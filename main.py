@@ -3,11 +3,11 @@ import logging
 import signal
 import sys
 import threading
-from config_manager import ConfigManager
-from config import CONFIG_PATH, API_PORT
-from api_server import app
-import api_server
-from bot import StickerBot
+from src.config.manager import ConfigManager
+from src.config.settings import CONFIG_PATH, API_PORT
+from src.api.server import app
+from src.api.routes.control import set_bot_instance, set_bot_task, bot_instance, bot_task
+from src.bot.bot import StickerBot
 import uvicorn
 
 logging.basicConfig(
@@ -34,32 +34,35 @@ async def start_bot_if_enabled():
     mode = config.get('mode', 'polling')
     logger.info(f"Запуск бота в режиме {mode}")
     
-    # Используем глобальные переменные из api_server
-    api_server.bot_instance = StickerBot()
+    # Используем глобальные переменные из control routes
+    bot_inst = StickerBot()
+    set_bot_instance(bot_inst)
     
     if mode == 'webhook':
-        api_server.bot_task = asyncio.create_task(api_server.bot_instance.run_webhook())
+        task = asyncio.create_task(bot_inst.run_webhook())
     else:
-        api_server.bot_task = asyncio.create_task(api_server.bot_instance.run_polling())
+        task = asyncio.create_task(bot_inst.run_polling())
+    
+    set_bot_task(task)
 
 
 async def stop_bot():
     """Остановить бота"""
-    if api_server.bot_instance and api_server.bot_task:
+    if bot_instance and bot_task:
         logger.info("Остановка бота...")
         try:
-            await api_server.bot_instance.stop()
-            if api_server.bot_task and not api_server.bot_task.done():
-                api_server.bot_task.cancel()
+            await bot_instance.stop()
+            if bot_task and not bot_task.done():
+                bot_task.cancel()
                 try:
-                    await api_server.bot_task
+                    await bot_task
                 except asyncio.CancelledError:
                     pass
         except Exception as e:
             logger.error(f"Ошибка при остановке бота: {e}")
         
-        api_server.bot_task = None
-        api_server.bot_instance = None
+        set_bot_task(None)
+        set_bot_instance(None)
 
 
 def run_api_server_thread():

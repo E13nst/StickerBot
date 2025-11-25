@@ -1,0 +1,286 @@
+import asyncio
+import logging
+from logging.handlers import RotatingFileHandler
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters,
+    ConversationHandler, ContextTypes
+)
+from src.config.settings import (
+    BOT_TOKEN,
+    GALLERY_BASE_URL,
+    GALLERY_SERVICE_TOKEN,
+    GALLERY_DEFAULT_LANGUAGE,
+    LOG_FILE_PATH,
+    WEBHOOK_URL,
+)
+from src.services.sticker_service import StickerService
+from src.services.image_service import ImageService
+from src.services.gallery_service import GalleryService
+from src.bot.states import (
+    CHOOSING_ACTION,
+    WAITING_NEW_TITLE,
+    WAITING_STICKER,
+    WAITING_EMOJI,
+    WAITING_DECISION,
+    WAITING_SHORT_NAME,
+    WAITING_EXISTING_CHOICE,
+    WAITING_PUBLISH_DECISION,
+    WAITING_MANAGE_CHOICE,
+)
+from src.bot.handlers.start import start
+from src.bot.handlers.create_set import (
+    create_new_set,
+    handle_new_set_title,
+    handle_emoji_for_create,
+    finish_sticker_collection_for_create,
+    handle_short_name,
+)
+from src.bot.handlers.add_existing import (
+    add_to_existing,
+    show_existing_sets,
+    handle_existing_choice,
+    handle_existing_choice_text,
+    handle_emoji_for_add_existing,
+    finish_sticker_collection_for_add_existing,
+    prompt_waiting_for_more,
+)
+from src.bot.handlers.manage_pub import (
+    manage_publication,
+    show_manage_sets,
+    handle_manage_choice,
+    handle_manage_choice_text,
+    handle_publish_choice,
+    handle_publish_choice_text,
+)
+from src.bot.handlers.sticker_common import handle_sticker
+from src.bot.handlers.common import cancel, error_handler
+
+logging.basicConfig(
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    level=logging.INFO,
+    handlers=[
+        logging.StreamHandler(),
+        RotatingFileHandler(LOG_FILE_PATH, maxBytes=1_000_000, backupCount=3)
+    ]
+)
+
+logger = logging.getLogger(__name__)
+
+
+class StickerBot:
+    def __init__(self):
+        self._validate_configuration()
+        self.application = Application.builder().token(BOT_TOKEN).build()
+        self.sticker_service = StickerService(BOT_TOKEN)
+        self.image_service = ImageService()
+        self.gallery_service = GalleryService(
+            base_url=GALLERY_BASE_URL,
+            service_token=GALLERY_SERVICE_TOKEN,
+            default_language=GALLERY_DEFAULT_LANGUAGE,
+        )
+
+        self.setup_handlers()
+        self._shutdown_event = asyncio.Event()
+
+    @staticmethod
+    def _validate_configuration():
+        missing = []
+
+        if not BOT_TOKEN:
+            missing.append('BOT_TOKEN')
+        if not GALLERY_BASE_URL:
+            missing.append('GALLERY_BASE_URL')
+        if not GALLERY_SERVICE_TOKEN:
+            missing.append('GALLERY_SERVICE_TOKEN')
+
+        if missing:
+            raise ValueError(
+                f"Не заданы необходимые переменные окружения: {', '.join(missing)}. "
+                "Проверь .env или окружение и перезапусти бота."
+            )
+
+    def setup_handlers(self):
+        # Создаем обертки для обработчиков с передачей сервисов
+        async def wrapped_start(update, context):
+            return await start(update, context)
+
+        async def wrapped_create_new_set(update, context):
+            return await create_new_set(update, context)
+
+        async def wrapped_add_to_existing(update, context):
+            return await add_to_existing(update, context)
+
+        async def wrapped_manage_publication(update, context):
+            return await manage_publication(update, context)
+
+        async def wrapped_handle_new_set_title(update, context):
+            return await handle_new_set_title(update, context)
+
+        async def wrapped_handle_sticker(update, context):
+            return await handle_sticker(
+                update,
+                context,
+                self.image_service,
+                show_existing_sets_func=lambda u, c, page: show_existing_sets(u, c, page, self.gallery_service)
+            )
+
+        async def wrapped_handle_emoji(update, context):
+            action = context.user_data.get('action')
+            if action == 'create_new':
+                return await handle_emoji_for_create(update, context, self.image_service)
+            elif action == 'add_existing':
+                return await handle_emoji_for_add_existing(
+                    update, context, self.sticker_service, self.gallery_service
+                )
+            return WAITING_STICKER
+
+        async def wrapped_finish_sticker_collection(update, context):
+            action = context.user_data.get('action')
+            if action == 'create_new':
+                return await finish_sticker_collection_for_create(update, context)
+            elif action == 'add_existing':
+                return await finish_sticker_collection_for_add_existing(update, context)
+            return -1
+
+        async def wrapped_prompt_waiting_for_more(update, context):
+            return await prompt_waiting_for_more(update, context)
+
+        async def wrapped_handle_short_name(update, context):
+            return await handle_short_name(
+                update, context, self.sticker_service, self.gallery_service
+            )
+
+        async def wrapped_show_existing_sets(update, context, page):
+            return await show_existing_sets(update, context, page, self.gallery_service)
+
+        async def wrapped_handle_existing_choice(update, context):
+            return await handle_existing_choice(
+                update, context, self.sticker_service, self.gallery_service
+            )
+
+        async def wrapped_handle_existing_choice_text(update, context):
+            return await handle_existing_choice_text(update, context)
+
+        async def wrapped_show_manage_sets(update, context, page):
+            return await show_manage_sets(update, context, page, self.gallery_service)
+
+        async def wrapped_handle_manage_choice(update, context):
+            return await handle_manage_choice(update, context, self.gallery_service)
+
+        async def wrapped_handle_manage_choice_text(update, context):
+            return await handle_manage_choice_text(update, context)
+
+        async def wrapped_handle_publish_choice(update, context):
+            return await handle_publish_choice(update, context, self.gallery_service)
+
+        async def wrapped_handle_publish_choice_text(update, context):
+            return await handle_publish_choice_text(update, context)
+
+        conv_handler = ConversationHandler(
+            entry_points=[CommandHandler('start', wrapped_start)],
+            states={
+                CHOOSING_ACTION: [
+                    MessageHandler(filters.Regex('^(Создать новый стикерсет)$'), wrapped_create_new_set),
+                    MessageHandler(filters.Regex('^(Добавить в существующий)$'), wrapped_add_to_existing),
+                    MessageHandler(filters.Regex('^(Управлять публикацией)$'), wrapped_manage_publication),
+                ],
+                WAITING_NEW_TITLE: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_handle_new_set_title)
+                ],
+                WAITING_STICKER: [
+                    MessageHandler(filters.PHOTO | filters.Document.ALL, wrapped_handle_sticker)
+                ],
+                WAITING_EMOJI: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_handle_emoji)
+                ],
+                WAITING_DECISION: [
+                    MessageHandler(filters.Regex('^(Готово|Завершить набор)$'), wrapped_finish_sticker_collection),
+                    MessageHandler(filters.PHOTO | filters.Document.ALL, wrapped_handle_sticker),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_prompt_waiting_for_more)
+                ],
+                WAITING_SHORT_NAME: [
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_handle_short_name)
+                ],
+                WAITING_EXISTING_CHOICE: [
+                    CallbackQueryHandler(wrapped_handle_existing_choice),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_handle_existing_choice_text)
+                ],
+                WAITING_PUBLISH_DECISION: [
+                    CallbackQueryHandler(wrapped_handle_publish_choice),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_handle_publish_choice_text),
+                ],
+                WAITING_MANAGE_CHOICE: [
+                    CallbackQueryHandler(wrapped_handle_manage_choice),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_handle_manage_choice_text),
+                ],
+            },
+            fallbacks=[CommandHandler('cancel', cancel)],
+            allow_reentry=True
+        )
+
+        self.application.add_handler(conv_handler)
+        self.application.add_error_handler(error_handler)
+
+    async def run_polling(self):
+        """Запуск бота в режиме polling"""
+        logger.info("Запуск бота в режиме polling")
+        try:
+            # Инициализация и запуск
+            await self.application.initialize()
+            await self.application.start()
+            await self.application.updater.start_polling()
+            
+            # После start_polling() polling работает в фоне
+            # Просто ждем сигнала остановки
+            await self._shutdown_event.wait()
+            
+        except Exception as e:
+            logger.error(f"Ошибка при работе бота в режиме polling: {e}")
+            raise
+        finally:
+            await self._shutdown()
+    
+    async def run_webhook(self):
+        """Запуск бота в режиме webhook"""
+        if not WEBHOOK_URL:
+            raise ValueError("WEBHOOK_URL не установлен в переменных окружения")
+        
+        logger.info(f"Запуск бота в режиме webhook: {WEBHOOK_URL}")
+        try:
+            # Инициализация
+            await self.application.initialize()
+            await self.application.start()
+            
+            # Устанавливаем webhook (обновления будут приходить на /webhook endpoint в FastAPI)
+            webhook_path = "/webhook"
+            full_webhook_url = f"{WEBHOOK_URL.rstrip('/')}{webhook_path}"
+            await self.application.bot.set_webhook(url=full_webhook_url)
+            logger.info(f"Webhook установлен: {full_webhook_url}")
+            
+            # В webhook режиме не нужно запускать отдельный сервер,
+            # обновления будут обрабатываться через FastAPI endpoint
+            # Просто ждем сигнала остановки
+            await self._shutdown_event.wait()
+            
+        except Exception as e:
+            logger.error(f"Ошибка при работе бота в режиме webhook: {e}")
+            raise
+        finally:
+            await self._shutdown()
+    
+    async def stop(self):
+        """Остановка бота (graceful shutdown)"""
+        logger.info("Получен сигнал остановки бота")
+        self._shutdown_event.set()
+    
+    async def _shutdown(self):
+        """Внутренний метод для завершения работы бота"""
+        try:
+            if self.application.updater.running:
+                await self.application.updater.stop()
+            await self.application.stop()
+            await self.application.shutdown()
+            logger.info("Бот успешно остановлен")
+        except Exception as e:
+            logger.error(f"Ошибка при остановке бота: {e}")
+

@@ -1,0 +1,2 @@
+# StickerBot package
+
