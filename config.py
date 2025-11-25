@@ -18,3 +18,9 @@ LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'bot.log')
 STICKER_SIZE = (512, 512)
 STICKER_MAX_SIZE = 512 * 1024  # 512KB
 WEBP_QUALITY = 85
+
+# Webhook и API настройки
+WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+API_TOKEN = os.getenv('API_TOKEN')
+API_PORT = int(os.getenv('API_PORT', '80'))
+CONFIG_PATH = os.getenv('CONFIG_PATH')

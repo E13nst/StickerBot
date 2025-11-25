@@ -15,6 +15,7 @@ from config import (
     GALLERY_SERVICE_TOKEN,
     GALLERY_DEFAULT_LANGUAGE,
     LOG_FILE_PATH,
+    WEBHOOK_URL,
 )
 from gallery_client import GalleryClient
 from image_processor import ImageProcessor
@@ -62,6 +63,7 @@ class StickerBot:
         )
 
         self.setup_handlers()
+        self._shutdown_event = asyncio.Event()
 
     @staticmethod
     def _validate_configuration():
@@ -959,11 +961,79 @@ class StickerBot:
         except Exception as notify_error:
             logger.error("Failed to notify user about error: %s", notify_error)
 
-    def run(self):
-        """Запуск бота"""
-        self.application.run_polling()
-
-
-if __name__ == '__main__':
-    bot = StickerBot()
-    bot.run()
+    async def run_polling(self):
+        """Запуск бота в режиме polling"""
+        logger.info("Запуск бота в режиме polling")
+        try:
+            # Инициализация и запуск
+            await self.application.initialize()
+            await self.application.start()
+            await self.application.updater.start_polling()
+            
+            # Запускаем задачу ожидания остановки
+            shutdown_task = asyncio.create_task(self._shutdown_event.wait())
+            idle_task = asyncio.create_task(self.application.updater.idle())
+            
+            # Ждем либо сигнала остановки, либо завершения idle
+            done, pending = await asyncio.wait(
+                [shutdown_task, idle_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            
+            # Отменяем оставшиеся задачи
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
+            
+        except Exception as e:
+            logger.error(f"Ошибка при работе бота в режиме polling: {e}")
+            raise
+        finally:
+            await self._shutdown()
+    
+    async def run_webhook(self):
+        """Запуск бота в режиме webhook"""
+        if not WEBHOOK_URL:
+            raise ValueError("WEBHOOK_URL не установлен в переменных окружения")
+        
+        logger.info(f"Запуск бота в режиме webhook: {WEBHOOK_URL}")
+        try:
+            # Инициализация
+            await self.application.initialize()
+            await self.application.start()
+            
+            # Устанавливаем webhook (обновления будут приходить на /webhook endpoint в FastAPI)
+            webhook_path = "/webhook"
+            full_webhook_url = f"{WEBHOOK_URL.rstrip('/')}{webhook_path}"
+            await self.application.bot.set_webhook(url=full_webhook_url)
+            logger.info(f"Webhook установлен: {full_webhook_url}")
+            
+            # В webhook режиме не нужно запускать отдельный сервер,
+            # обновления будут обрабатываться через FastAPI endpoint
+            # Просто ждем сигнала остановки
+            await self._shutdown_event.wait()
+            
+        except Exception as e:
+            logger.error(f"Ошибка при работе бота в режиме webhook: {e}")
+            raise
+        finally:
+            await self._shutdown()
+    
+    async def stop(self):
+        """Остановка бота (graceful shutdown)"""
+        logger.info("Получен сигнал остановки бота")
+        self._shutdown_event.set()
+    
+    async def _shutdown(self):
+        """Внутренний метод для завершения работы бота"""
+        try:
+            if self.application.updater.running:
+                await self.application.updater.stop()
+            await self.application.stop()
+            await self.application.shutdown()
+            logger.info("Бот успешно остановлен")
+        except Exception as e:
+            logger.error(f"Ошибка при остановке бота: {e}")

@@ -2,4 +2,7 @@ python-telegram-bot==20.7
 Pillow
 requests
 python-dotenv
+fastapi
+uvicorn[standard]
+pyyaml
 
