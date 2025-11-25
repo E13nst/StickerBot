@@ -3,7 +3,7 @@
 VENV ?= ./venv
 PYTHON := $(VENV)/bin/python
 PIP := $(VENV)/bin/pip
-BOT_SCRIPT := bot.py
+BOT_SCRIPT := main.py
 ENV_FILE := .env
 
 install:

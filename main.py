@@ -2,11 +2,13 @@ import asyncio
 import logging
 import signal
 import sys
+import threading
 from config_manager import ConfigManager
-from config import CONFIG_PATH
-from api_server import run_api_server
+from config import CONFIG_PATH, API_PORT
+from api_server import app
 import api_server
 from bot import StickerBot
+import uvicorn
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -16,8 +18,8 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Глобальные переменные
-api_task = None
-shutdown_event = asyncio.Event()
+api_thread = None
+shutdown_event = threading.Event()
 
 
 async def start_bot_if_enabled():
@@ -60,9 +62,21 @@ async def stop_bot():
         api_server.bot_instance = None
 
 
+def run_api_server_thread():
+    """Запуск API сервера в отдельном потоке"""
+    config = uvicorn.Config(
+        app,
+        host="0.0.0.0",
+        port=API_PORT,
+        log_level="info"
+    )
+    server = uvicorn.Server(config)
+    asyncio.run(server.serve())
+
+
 async def main():
     """Главная функция для координации запуска"""
-    global api_task
+    global api_thread
     
     logger.info("Запуск StickerBot Control System")
     
@@ -70,12 +84,13 @@ async def main():
     config_manager = ConfigManager(CONFIG_PATH)
     logger.info(f"Конфиг загружен из: {config_manager.config_path}")
     
-    # Запускаем API сервер
+    # Запускаем API сервер в отдельном потоке
     logger.info("Запуск API сервера...")
-    api_task = asyncio.create_task(run_api_server())
+    api_thread = threading.Thread(target=run_api_server_thread, daemon=True)
+    api_thread.start()
     
     # Небольшая задержка для запуска API сервера
-    await asyncio.sleep(1)
+    await asyncio.sleep(2)
     
     # Запускаем бота, если он включен
     await start_bot_if_enabled()
@@ -89,22 +104,14 @@ async def main():
     signal.signal(signal.SIGTERM, signal_handler)
     
     try:
-        # Ждем сигнала остановки
-        await shutdown_event.wait()
+        # Ждем сигнала остановки (используем threading.Event в цикле)
+        while not shutdown_event.is_set():
+            await asyncio.sleep(0.1)
     except KeyboardInterrupt:
         logger.info("Получен KeyboardInterrupt, начинаем остановку...")
     finally:
         # Останавливаем бота
         await stop_bot()
-        
-        # Останавливаем API сервер
-        if api_task and not api_task.done():
-            logger.info("Остановка API сервера...")
-            api_task.cancel()
-            try:
-                await api_task
-            except asyncio.CancelledError:
-                pass
         
         logger.info("Система остановлена")
 

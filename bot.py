@@ -970,23 +970,9 @@ class StickerBot:
             await self.application.start()
             await self.application.updater.start_polling()
             
-            # Запускаем задачу ожидания остановки
-            shutdown_task = asyncio.create_task(self._shutdown_event.wait())
-            idle_task = asyncio.create_task(self.application.updater.idle())
-            
-            # Ждем либо сигнала остановки, либо завершения idle
-            done, pending = await asyncio.wait(
-                [shutdown_task, idle_task],
-                return_when=asyncio.FIRST_COMPLETED
-            )
-            
-            # Отменяем оставшиеся задачи
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+            # После start_polling() polling работает в фоне
+            # Просто ждем сигнала остановки
+            await self._shutdown_event.wait()
             
         except Exception as e:
             logger.error(f"Ошибка при работе бота в режиме polling: {e}")
