@@ -11,6 +11,6 @@ build:
   useCache: true
 
 run:
-  command: python main.py
+  command: python3 main.py
   persistenceMount: /data
   containerPort: 80
