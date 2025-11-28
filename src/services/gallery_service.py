@@ -25,13 +25,21 @@ class GalleryService:
         """Проверяет, настроен ли клиент галереи"""
         return self.client.is_configured()
     
+    def check_sticker_set(
+        self,
+        url: Optional[str] = None,
+        name: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Проверяет наличие стикерсета в галерее по имени или URL"""
+        return self.client.check_sticker_set(url=url, name=name)
+    
     def save_sticker_set(
         self,
         user_id: int,
         sticker_set_id: Optional[int],
         sticker_set_link: str,
         title: Optional[str] = None,
-        is_public: bool = False,
+        visibility: str = "PRIVATE",
         language: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Сохраняет стикерсет в галерею"""
@@ -40,7 +48,7 @@ class GalleryService:
             sticker_set_id=sticker_set_id,
             sticker_set_link=sticker_set_link,
             title=title,
-            is_public=is_public,
+            visibility=visibility,
             language=language,
         )
     

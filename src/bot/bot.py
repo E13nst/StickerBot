@@ -55,7 +55,7 @@ from src.bot.handlers.manage_pub import (
 )
 from src.bot.handlers.sticker_common import handle_sticker
 from src.bot.handlers.common import cancel, error_handler
-from src.bot.handlers.add_pack_from_sticker import handle_sticker_for_add_pack
+from src.bot.handlers.add_pack_from_sticker import handle_sticker_for_add_pack, handle_add_to_gallery
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -225,6 +225,25 @@ class StickerBot:
                 update, context, self.gallery_service, self.sticker_service
             )
 
+        async def wrapped_handle_sticker_in_main_menu(update, context):
+            """Обработчик стикеров в главном меню"""
+            return await handle_sticker_for_add_pack(
+                update, context, self.gallery_service, self.sticker_service
+            )
+
+        async def wrapped_handle_sticker_before_start(update, context):
+            """Обработчик стикеров до начала диалога (/start)"""
+            # Обрабатываем стикер так же, как в главном меню
+            result = await handle_sticker_for_add_pack(
+                update, context, self.gallery_service, self.sticker_service
+            )
+            return result
+
+        async def wrapped_handle_add_to_gallery(update, context):
+            return await handle_add_to_gallery(
+                update, context, self.gallery_service
+            )
+
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler('start', wrapped_start)],
             states={
@@ -232,7 +251,9 @@ class StickerBot:
                     MessageHandler(filters.Regex('^(Создать новый стикерсет)$'), wrapped_create_new_set),
                     MessageHandler(filters.Regex('^(Добавить в существующий)$'), wrapped_add_to_existing),
                     MessageHandler(filters.Regex('^(Управлять публикацией)$'), wrapped_manage_publication),
+                    MessageHandler(filters.Sticker.ALL, wrapped_handle_sticker_in_main_menu),
                     CallbackQueryHandler(wrapped_handle_add_pack_from_sticker, pattern='^add_pack_from_sticker$'),
+                    CallbackQueryHandler(wrapped_handle_add_to_gallery, pattern='^add_to_gallery:'),
                     CallbackQueryHandler(wrapped_handle_manage_stickers_menu, pattern='^manage_stickers_menu$'),
                     CallbackQueryHandler(wrapped_handle_back_to_main, pattern='^back_to_main$'),
                     CallbackQueryHandler(wrapped_handle_manage_callback, pattern='^manage:(create_new|add_existing|publication)$'),
@@ -273,6 +294,15 @@ class StickerBot:
             fallbacks=[CommandHandler('cancel', cancel)],
             allow_reentry=True
         )
+
+        # Добавляем обработчик стикеров для нулевого состояния (до /start)
+        # Этот обработчик должен быть добавлен ПЕРЕД ConversationHandler,
+        # чтобы перехватывать стикеры до начала диалога
+        sticker_handler_before_start = MessageHandler(
+            filters.Sticker.ALL,
+            wrapped_handle_sticker_before_start
+        )
+        self.application.add_handler(sticker_handler_before_start)
 
         self.application.add_handler(conv_handler)
         self.application.add_error_handler(error_handler)
