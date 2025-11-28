@@ -77,7 +77,11 @@ async def stop_endpoint(token: str = Depends(get_token_from_header)):
 @app.post("/api/control/mode", tags=["control"])
 async def mode_endpoint(request_mode: ModeRequest, token: str = Depends(get_token_from_header)):
     """Переключить режим работы бота"""
-    return await set_mode(request_mode, token)
+    result = await set_mode(request_mode, token)
+    # Обновляем экземпляр бота в webhook
+    from src.api.routes.control import bot_instance
+    set_webhook_bot_instance(bot_instance)
+    return result
 
 
 @app.post("/api/control/enable", tags=["control"])
