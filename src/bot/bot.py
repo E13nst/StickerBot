@@ -28,7 +28,7 @@ from src.bot.states import (
     WAITING_MANAGE_CHOICE,
     WAITING_STICKER_PACK_LINK,
 )
-from src.bot.handlers.start import start, handle_add_pack_from_sticker, handle_manage_stickers_menu, handle_back_to_main
+from src.bot.handlers.start import start, handle_manage_stickers_menu, handle_back_to_main
 from src.bot.handlers.create_set import (
     create_new_set,
     handle_new_set_title,
@@ -178,9 +178,6 @@ class StickerBot:
         async def wrapped_handle_publish_choice_text(update, context):
             return await handle_publish_choice_text(update, context)
 
-        async def wrapped_handle_add_pack_from_sticker(update, context):
-            return await handle_add_pack_from_sticker(update, context)
-
         async def wrapped_handle_manage_stickers_menu(update, context):
             return await handle_manage_stickers_menu(update, context)
 
@@ -252,7 +249,6 @@ class StickerBot:
                     MessageHandler(filters.Regex('^(Добавить в существующий)$'), wrapped_add_to_existing),
                     MessageHandler(filters.Regex('^(Управлять публикацией)$'), wrapped_manage_publication),
                     MessageHandler(filters.Sticker.ALL, wrapped_handle_sticker_in_main_menu),
-                    CallbackQueryHandler(wrapped_handle_add_pack_from_sticker, pattern='^add_pack_from_sticker$'),
                     CallbackQueryHandler(wrapped_handle_add_to_gallery, pattern='^add_to_gallery:'),
                     CallbackQueryHandler(wrapped_handle_manage_stickers_menu, pattern='^manage_stickers_menu$'),
                     CallbackQueryHandler(wrapped_handle_back_to_main, pattern='^back_to_main$'),
