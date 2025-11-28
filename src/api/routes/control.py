@@ -211,10 +211,10 @@ async def set_mode(request: ModeRequest, token: str = Depends(verify_token)):
     - **mode**: 'polling' или 'webhook'
     
     При переключении на webhook проверяется наличие WEBHOOK_URL в переменных окружения.
-    Если бот запущен, он будет остановлен. Необходимо запустить его заново через /api/control/start.
+    Если бот запущен, он будет остановлен и автоматически запущен в новом режиме.
     Бот автоматически включается (enabled = true) при переключении режима.
     """
-    global bot_task
+    global bot_instance, bot_task
     
     if request.mode not in ('polling', 'webhook'):
         raise HTTPException(
@@ -245,6 +245,7 @@ async def set_mode(request: ModeRequest, token: str = Depends(verify_token)):
             pass
         
         bot_task = None
+        bot_instance = None  # Очищаем экземпляр бота после остановки
     
     # Обновляем конфиг
     cm = get_config_manager()
@@ -256,11 +257,24 @@ async def set_mode(request: ModeRequest, token: str = Depends(verify_token)):
     
     logger.info(f"Режим изменен на {request.mode}, бот включен")
     
+    # Автоматически запускаем бота в новом режиме
+    from src.bot.bot import StickerBot
+    
+    bot_instance = StickerBot()
+    
+    # Запускаем бота в фоновой задаче
+    if request.mode == 'webhook':
+        bot_task = asyncio.create_task(bot_instance.run_webhook())
+    else:
+        bot_task = asyncio.create_task(bot_instance.run_polling())
+    
+    logger.info(f"Бот автоматически запущен в режиме {request.mode}")
+    
     return {
         "status": "updated",
         "mode": request.mode,
         "enabled": True,
-        "message": f"Режим изменен на {request.mode}, бот включен. Используйте /api/control/start для запуска бота."
+        "message": f"Режим изменен на {request.mode}, бот автоматически запущен."
     }
 
 
