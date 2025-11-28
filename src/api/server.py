@@ -88,6 +88,51 @@ async def root():
     }
 
 
+# Настраиваем OpenAPI схему для правильного отображения авторизации в Swagger
+# Должно быть после регистрации всех routes
+def custom_openapi():
+    if app.openapi_schema:
+        return app.openapi_schema
+    from fastapi.openapi.utils import get_openapi
+    openapi_schema = get_openapi(
+        title=app.title,
+        version=app.version,
+        description=app.description,
+        routes=app.routes,
+    )
+    # Добавляем security схему
+    openapi_schema["components"]["securitySchemes"] = {
+        "Bearer": {
+            "type": "http",
+            "scheme": "bearer",
+            "bearerFormat": "JWT",
+            "description": "Введите ваш API токен"
+        }
+    }
+    # Добавляем security ко всем защищенным эндпоинтам и убираем лишние параметры
+    for path, path_item in openapi_schema.get("paths", {}).items():
+        if path.startswith("/api/control"):
+            for method in path_item:
+                if method in ["get", "post", "put", "delete", "patch"]:
+                    method_item = path_item[method]
+                    # Добавляем security
+                    if "security" not in method_item:
+                        method_item["security"] = [{"Bearer": []}]
+                    # Убираем лишние параметры scheme и credentials, если они есть
+                    if "parameters" in method_item:
+                        method_item["parameters"] = [
+                            p for p in method_item["parameters"]
+                            if p.get("name") not in ["scheme", "credentials"]
+                        ]
+                        # Если параметров не осталось, удаляем ключ
+                        if not method_item["parameters"]:
+                            del method_item["parameters"]
+    app.openapi_schema = openapi_schema
+    return app.openapi_schema
+
+app.openapi = custom_openapi
+
+
 async def run_api_server():
     """Запуск API сервера"""
     import uvicorn
