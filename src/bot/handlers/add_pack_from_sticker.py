@@ -1,10 +1,11 @@
 import logging
 import asyncio
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes
 
 from src.bot.states import WAITING_STICKER_PACK_LINK, CHOOSING_ACTION
 from src.bot.handlers.start import main_menu_keyboard
+from src.config.settings import MINIAPP_GALLERY_URL
 
 logger = logging.getLogger(__name__)
 
@@ -81,8 +82,24 @@ async def handle_sticker_for_add_pack(
             "Но твой вклад всё равно важен: ты помогаешь нам собирать самую большую коллекцию.\n\n"
             "Хочешь ART и место в рейтинге — пришли стикер из набора, которого ещё нет в Stixly."
         )
-        await message.reply_text(text)
-        await message.reply_text("Что выбираем дальше?", reply_markup=main_menu_keyboard())
+        
+        keyboard = []
+        if MINIAPP_GALLERY_URL:
+            keyboard.append([
+                InlineKeyboardButton(
+                    "Показать в Stixly",
+                    web_app=WebAppInfo(url=MINIAPP_GALLERY_URL)
+                )
+            ])
+        keyboard.append([
+            InlineKeyboardButton(
+                "Главное меню",
+                callback_data="back_to_main"
+            )
+        ])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
+        await message.reply_text(text, reply_markup=reply_markup)
         return CHOOSING_ACTION
     else:
         # Стикерсета нет в галерее - предлагаем добавить
