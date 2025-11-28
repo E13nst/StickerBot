@@ -1,11 +1,10 @@
 import logging
 import asyncio
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
 from src.bot.states import WAITING_STICKER_PACK_LINK, CHOOSING_ACTION
 from src.bot.handlers.start import main_menu_keyboard
-from src.config.settings import MINIAPP_GALLERY_URL
 
 logger = logging.getLogger(__name__)
 
@@ -84,11 +83,12 @@ async def handle_sticker_for_add_pack(
         )
         
         keyboard = []
-        if MINIAPP_GALLERY_URL:
+        set_id = check_result.get('id')
+        if set_id:
             keyboard.append([
                 InlineKeyboardButton(
-                    "Показать в Stixly",
-                    web_app=WebAppInfo(url=MINIAPP_GALLERY_URL)
+                    "Посмотреть в Stixly",
+                    url=f"https://sticker-art-e13nst.amvera.io/miniapp/gallery?set_id={set_id}"
                 )
             ])
         keyboard.append([
@@ -189,12 +189,31 @@ async def handle_add_to_gallery(
             f"За твой вклад начислено +10 ART.\n\n"
             f"Стикерсет: {pack_link}"
         )
+        
+        # Формируем клавиатуру с кнопками
+        keyboard = []
+        set_id = result.get('id')
+        if set_id:
+            keyboard.append([
+                InlineKeyboardButton(
+                    "Посмотреть в Stixly",
+                    url=f"https://sticker-art-e13nst.amvera.io/miniapp/gallery?set_id={set_id}"
+                )
+            ])
+        keyboard.append([
+            InlineKeyboardButton(
+                "Главное меню",
+                callback_data="back_to_main"
+            )
+        ])
+        reply_markup = InlineKeyboardMarkup(keyboard)
+        
         try:
-            await query.edit_message_text(success_text)
+            await query.edit_message_text(success_text, reply_markup=reply_markup)
         except Exception as e:
             logger.warning(f"Не удалось отредактировать сообщение: {e}")
             if query.message:
-                await query.message.reply_text(success_text)
+                await query.message.reply_text(success_text, reply_markup=reply_markup)
     else:
         error_text = (
             "❌ Не удалось добавить стикерсет в галерею.\n\n"
@@ -206,14 +225,6 @@ async def handle_add_to_gallery(
             logger.warning(f"Не удалось отредактировать сообщение: {e}")
             if query.message:
                 await query.message.reply_text(error_text)
-    
-    # Возвращаем пользователя в главное меню
-    from src.bot.handlers.start import main_menu_keyboard
-    try:
-        if query.message:
-            await query.message.reply_text("Что выбираем дальше?", reply_markup=main_menu_keyboard())
-    except Exception as e:
-        logger.warning(f"Не удалось отправить главное меню: {e}")
     
     return CHOOSING_ACTION
 
