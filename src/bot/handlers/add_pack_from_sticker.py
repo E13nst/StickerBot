@@ -1,6 +1,6 @@
 import logging
 import asyncio
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes
 
 from src.bot.states import WAITING_STICKER_PACK_LINK, CHOOSING_ACTION
@@ -88,7 +88,7 @@ async def handle_sticker_for_add_pack(
             keyboard.append([
                 InlineKeyboardButton(
                     "Посмотреть в Stixly",
-                    url=f"https://sticker-art-e13nst.amvera.io/miniapp/gallery?set_id={set_id}"
+                    web_app=WebAppInfo(url=f"https://sticker-art-e13nst.amvera.io/miniapp/gallery?set_id={set_id}")
                 )
             ])
         keyboard.append([
@@ -197,7 +197,7 @@ async def handle_add_to_gallery(
             keyboard.append([
                 InlineKeyboardButton(
                     "Посмотреть в Stixly",
-                    url=f"https://sticker-art-e13nst.amvera.io/miniapp/gallery?set_id={set_id}"
+                    web_app=WebAppInfo(url=f"https://sticker-art-e13nst.amvera.io/miniapp/gallery?set_id={set_id}")
                 )
             ])
         keyboard.append([
