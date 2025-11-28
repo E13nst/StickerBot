@@ -49,15 +49,17 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     name = user.first_name or "друг"
 
     text = (
-        f"Йо, {name}!\n"
+        f"Йо, {name}!\n\n"
         "Ты в зоне Stixly — наше комьюнити собирает самую большую галерею стикеров.\n\n"
         "Сейчас ты можешь:\n"
         "• Найти стикер в галерее\n"
-        "• Добавить стикерсет в галерею (+10 ART)\n\n"
-        "Дальше — умный поиск, конструктор стикеров и AI-инструменты."
+        "• Добавить стикерсет в галерею (+10 ART за новый набор)\n\n"
+        "<i>Дальше — умный поиск, конструктор стикеров и AI-инструменты.</i>\n\n"
+        "ART — это внутренняя валюта и ачивки за вклад в галерею.\n\n"
+        "У нас есть рейтинг тех, кто загрузил больше всех стикеров."
     )
 
-    await update.message.reply_text(text, reply_markup=main_menu_keyboard())
+    await update.message.reply_text(text, reply_markup=main_menu_keyboard(), parse_mode='HTML')
 
     return CHOOSING_ACTION
 
@@ -156,19 +158,21 @@ async def handle_back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE
     name = user.first_name or "друг"
     
     text = (
-        f"Йо, {name}!\n"
+        f"Йо, {name}!\n\n"
         "Ты в зоне Stixly — наше комьюнити собирает самую большую галерею стикеров.\n\n"
         "Сейчас ты можешь:\n"
         "• Найти стикер в галерее\n"
-        "• Добавить стикерсет в галерею (+10 ART)\n\n"
-        "Дальше — умный поиск, конструктор стикеров и AI-инструменты."
+        "• Добавить стикерсет в галерею (+10 ART за новый набор)\n\n"
+        "<i>Дальше — умный поиск, конструктор стикеров и AI-инструменты.</i>\n\n"
+        "ART — это внутренняя валюта и ачивки за вклад в галерею.\n\n"
+        "У нас есть рейтинг тех, кто загрузил больше всех стикеров."
     )
     
     try:
-        await query.edit_message_text(text, reply_markup=main_menu_keyboard())
+        await query.edit_message_text(text, reply_markup=main_menu_keyboard(), parse_mode='HTML')
     except Exception as e:
         logger.warning(f"Не удалось отредактировать сообщение: {e}")
         if query.message:
-            await query.message.reply_text(text, reply_markup=main_menu_keyboard())
+            await query.message.reply_text(text, reply_markup=main_menu_keyboard(), parse_mode='HTML')
 
     return CHOOSING_ACTION
