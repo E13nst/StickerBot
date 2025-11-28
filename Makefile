@@ -59,7 +59,12 @@ status:
 
 test:
 	@echo "Запуск тестов..."
-	@$(PYTHON) -m pytest tests/ -v || echo "Тесты не найдены или pytest не установлен"
+	@if [ ! -d $(VENV) ]; then \
+		echo "⚠️  Виртуальное окружение не найдено. Запустите 'make install' сначала."; \
+		exit 1; \
+	fi
+	@$(PYTHON) -m pytest tests/ -v --tb=short || (echo "❌ Тесты завершились с ошибками" && exit 1)
+	@echo "✅ Все тесты пройдены успешно"
 
 check:
 	@echo "Проверка структуры проекта..."
