@@ -192,6 +192,12 @@ async def stop_bot(token: str = Depends(verify_token)):
             await bot_task
         except asyncio.CancelledError:
             pass
+        except RuntimeError as e:
+            # RuntimeError возникает если задача привязана к другому event loop
+            if "attached to a different loop" in str(e):
+                logger.warning("bot_task принадлежит другому event loop, пропускаем await")
+            else:
+                logger.debug(f"RuntimeError при ожидании отмены задачи: {e}")
     
     bot_task = None
     bot_instance = None
@@ -243,6 +249,12 @@ async def set_mode(request: ModeRequest, token: str = Depends(verify_token)):
             await bot_task
         except asyncio.CancelledError:
             pass
+        except RuntimeError as e:
+            # RuntimeError возникает если задача привязана к другому event loop
+            if "attached to a different loop" in str(e):
+                logger.warning("bot_task принадлежит другому event loop, пропускаем await")
+            else:
+                logger.debug(f"RuntimeError при ожидании отмены задачи: {e}")
         
         bot_task = None
         bot_instance = None  # Очищаем экземпляр бота после остановки
@@ -304,6 +316,12 @@ async def set_enabled(request: EnableRequest, token: str = Depends(verify_token)
             await bot_task
         except asyncio.CancelledError:
             pass
+        except RuntimeError as e:
+            # RuntimeError возникает если задача привязана к другому event loop
+            if "attached to a different loop" in str(e):
+                logger.warning("bot_task принадлежит другому event loop, пропускаем await")
+            else:
+                logger.debug(f"RuntimeError при ожидании отмены задачи: {e}")
         
         bot_task = None
     
