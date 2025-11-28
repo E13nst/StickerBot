@@ -17,6 +17,10 @@ LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'bot.log')
 
 # Webhook и API настройки
 WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+WEBHOOK_SECRET_TOKEN = os.getenv('WEBHOOK_SECRET_TOKEN')
+WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
+WEBHOOK_RATE_LIMIT = os.getenv('WEBHOOK_RATE_LIMIT', '100/minute')
+WEBHOOK_IP_CHECK_ENABLED = os.getenv('WEBHOOK_IP_CHECK_ENABLED', 'false').lower() == 'true'
 API_TOKEN = os.getenv('API_TOKEN')
 API_PORT = int(os.getenv('API_PORT', '80'))
 CONFIG_PATH = os.getenv('CONFIG_PATH')

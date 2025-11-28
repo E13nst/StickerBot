@@ -12,6 +12,8 @@ from src.config.settings import (
     GALLERY_DEFAULT_LANGUAGE,
     LOG_FILE_PATH,
     WEBHOOK_URL,
+    WEBHOOK_SECRET_TOKEN,
+    WEBHOOK_PATH,
 )
 from src.services.sticker_service import StickerService
 from src.services.image_service import ImageService
@@ -337,11 +339,28 @@ class StickerBot:
             await self.application.initialize()
             await self.application.start()
             
-            # Устанавливаем webhook (обновления будут приходить на /webhook endpoint в FastAPI)
-            webhook_path = "/webhook"
+            # Используем путь из настроек (по умолчанию /webhook)
+            # Убеждаемся, что путь начинается с /
+            webhook_path = WEBHOOK_PATH if WEBHOOK_PATH.startswith('/') else f'/{WEBHOOK_PATH}'
             full_webhook_url = f"{WEBHOOK_URL.rstrip('/')}{webhook_path}"
-            await self.application.bot.set_webhook(url=full_webhook_url)
-            logger.info(f"Webhook установлен: {full_webhook_url}")
+            
+            # Проверяем наличие секретного токена
+            if not WEBHOOK_SECRET_TOKEN:
+                logger.warning(
+                    "WEBHOOK_SECRET_TOKEN не установлен! "
+                    "Webhook будет работать без защиты. Рекомендуется установить токен."
+                )
+                await self.application.bot.set_webhook(url=full_webhook_url)
+            else:
+                # Устанавливаем webhook с секретным токеном
+                await self.application.bot.set_webhook(
+                    url=full_webhook_url,
+                    secret_token=WEBHOOK_SECRET_TOKEN
+                )
+                logger.info(
+                    f"Webhook установлен: {full_webhook_url} "
+                    f"с секретным токеном (первые 10 символов): {WEBHOOK_SECRET_TOKEN[:10]}..."
+                )
             
             # В webhook режиме не нужно запускать отдельный сервер,
             # обновления будут обрабатываться через FastAPI endpoint
