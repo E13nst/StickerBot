@@ -3,6 +3,7 @@ import logging
 from fastapi import FastAPI, Request, Depends
 from fastapi.security import HTTPBearer
 from pydantic import BaseModel
+from slowapi.errors import RateLimitExceeded
 
 from src.api.routes.webhook import telegram_webhook, set_bot_instance as set_webhook_bot_instance
 from src.api.routes.control import (
@@ -20,6 +21,8 @@ from src.api.routes.control import (
     get_verify_token_dependency,
     get_token_from_header,
 )
+from src.api.middleware.rate_limit import limiter, _rate_limit_exceeded_handler
+from src.config.settings import WEBHOOK_PATH, WEBHOOK_RATE_LIMIT
 
 logger = logging.getLogger(__name__)
 
@@ -31,6 +34,10 @@ app = FastAPI(
     version="1.0.0"
 )
 
+# Настройка rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
 # Инициализация routes
 init_control(security)
 
@@ -38,7 +45,8 @@ init_control(security)
 verify_token = get_verify_token_dependency()
 
 
-@app.post("/webhook")
+@app.post(WEBHOOK_PATH)
+@limiter.limit(WEBHOOK_RATE_LIMIT)
 async def webhook_endpoint(request: Request):
     """Webhook endpoint для получения обновлений от Telegram"""
     return await telegram_webhook(request)

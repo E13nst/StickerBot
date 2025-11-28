@@ -5,4 +5,8 @@ python-dotenv
 fastapi
 uvicorn[standard]
 pyyaml
+slowapi==0.1.9
+pytest
+pytest-asyncio
+httpx
 
