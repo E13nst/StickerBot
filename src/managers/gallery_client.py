@@ -15,6 +15,84 @@ class GalleryClient:
     def is_configured(self) -> bool:
         return bool(self.base_url and self.service_token)
 
+    def check_sticker_set(
+        self,
+        url: Optional[str] = None,
+        name: Optional[str] = None,
+    ) -> Optional[Dict[str, Any]]:
+        """Проверяет наличие стикерсета в галерее по имени или URL"""
+        if not self.is_configured():
+            logger.warning("Gallery client is not configured. Skipping sticker set check.")
+            return None
+
+        if not url and not name:
+            logger.error("Either url or name must be provided for sticker set check")
+            return None
+
+        try:
+            check_url = f"{self.base_url}/internal/stickersets/check"
+            params = {}
+            
+            if url:
+                params['url'] = url
+            elif name:
+                params['name'] = name
+
+            headers = {
+                'accept': 'application/json',
+                'X-Service-Token': self.service_token,
+            }
+
+            response = requests.get(check_url, params=params, headers=headers, timeout=10)
+
+            if response.status_code == 200:
+                result = response.json()
+                logger.info(
+                    "Sticker set check result: exists=%s, name=%s",
+                    result.get('exists'),
+                    result.get('name')
+                )
+                return result
+
+            # Обработка ошибок
+            if response.status_code == 400:
+                logger.error(
+                    "Bad request for sticker set check. Status: %s, Response: %s",
+                    response.status_code,
+                    response.text,
+                )
+                return {'error': 'bad_request', 'status': 400, 'message': 'Некорректный запрос'}
+            elif response.status_code == 401:
+                logger.error(
+                    "Unauthorized for sticker set check. Status: %s",
+                    response.status_code,
+                )
+                return {'error': 'unauthorized', 'status': 401, 'message': 'Ошибка авторизации'}
+            elif response.status_code == 403:
+                logger.error(
+                    "Forbidden for sticker set check. Status: %s",
+                    response.status_code,
+                )
+                return {'error': 'forbidden', 'status': 403, 'message': 'Нет прав доступа'}
+            elif response.status_code == 500:
+                logger.error(
+                    "Server error for sticker set check. Status: %s, Response: %s",
+                    response.status_code,
+                    response.text,
+                )
+                return {'error': 'server_error', 'status': 500, 'message': 'Внутренняя ошибка сервера'}
+            else:
+                logger.error(
+                    "Unexpected error for sticker set check. Status: %s, Response: %s",
+                    response.status_code,
+                    response.text,
+                )
+                return {'error': 'unknown', 'status': response.status_code, 'message': 'Неизвестная ошибка'}
+
+        except Exception as e:
+            logger.error(f"Error checking sticker set: {e}")
+            return None
+
     def save_sticker_set(
         self,
         user_id: int,

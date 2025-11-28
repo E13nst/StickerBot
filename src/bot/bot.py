@@ -55,7 +55,7 @@ from src.bot.handlers.manage_pub import (
 )
 from src.bot.handlers.sticker_common import handle_sticker
 from src.bot.handlers.common import cancel, error_handler
-from src.bot.handlers.add_pack_from_sticker import handle_sticker_for_add_pack
+from src.bot.handlers.add_pack_from_sticker import handle_sticker_for_add_pack, handle_add_to_gallery
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -256,6 +256,11 @@ class StickerBot:
                     await message.reply_text(text, reply_markup=main_menu_keyboard())
             return result
 
+        async def wrapped_handle_add_to_gallery(update, context):
+            return await handle_add_to_gallery(
+                update, context, self.gallery_service
+            )
+
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler('start', wrapped_start)],
             states={
@@ -265,6 +270,7 @@ class StickerBot:
                     MessageHandler(filters.Regex('^(Управлять публикацией)$'), wrapped_manage_publication),
                     MessageHandler(filters.Sticker.ALL, wrapped_handle_sticker_in_main_menu),
                     CallbackQueryHandler(wrapped_handle_add_pack_from_sticker, pattern='^add_pack_from_sticker$'),
+                    CallbackQueryHandler(wrapped_handle_add_to_gallery, pattern='^add_to_gallery:'),
                     CallbackQueryHandler(wrapped_handle_manage_stickers_menu, pattern='^manage_stickers_menu$'),
                     CallbackQueryHandler(wrapped_handle_back_to_main, pattern='^back_to_main$'),
                     CallbackQueryHandler(wrapped_handle_manage_callback, pattern='^manage:(create_new|add_existing|publication)$'),
