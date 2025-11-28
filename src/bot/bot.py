@@ -26,8 +26,9 @@ from src.bot.states import (
     WAITING_EXISTING_CHOICE,
     WAITING_PUBLISH_DECISION,
     WAITING_MANAGE_CHOICE,
+    WAITING_STICKER_PACK_LINK,
 )
-from src.bot.handlers.start import start
+from src.bot.handlers.start import start, handle_add_pack_from_sticker, handle_manage_stickers_menu, handle_back_to_main
 from src.bot.handlers.create_set import (
     create_new_set,
     handle_new_set_title,
@@ -54,6 +55,7 @@ from src.bot.handlers.manage_pub import (
 )
 from src.bot.handlers.sticker_common import handle_sticker
 from src.bot.handlers.common import cancel, error_handler
+from src.bot.handlers.add_pack_from_sticker import handle_sticker_for_add_pack
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -176,6 +178,53 @@ class StickerBot:
         async def wrapped_handle_publish_choice_text(update, context):
             return await handle_publish_choice_text(update, context)
 
+        async def wrapped_handle_add_pack_from_sticker(update, context):
+            return await handle_add_pack_from_sticker(update, context)
+
+        async def wrapped_handle_manage_stickers_menu(update, context):
+            return await handle_manage_stickers_menu(update, context)
+
+        async def wrapped_handle_back_to_main(update, context):
+            return await handle_back_to_main(update, context)
+
+        async def wrapped_handle_manage_callback(update, context):
+            """Обработчик для callback-кнопок из подменю управления стикерами"""
+            query = update.callback_query
+            await query.answer()
+
+            data = query.data
+            
+            # Удаляем сообщение с меню
+            try:
+                await query.message.delete()
+            except:
+                pass
+
+            # Создаем синтетический update с message для совместимости
+            class SyntheticUpdate:
+                def __init__(self, original_update, message):
+                    self.effective_user = original_update.effective_user
+                    self.effective_chat = original_update.effective_chat
+                    self.message = message
+                    self.callback_query = None
+
+            synthetic_message = query.message
+            synthetic_update = SyntheticUpdate(update, synthetic_message)
+
+            if data == 'manage:create_new':
+                return await wrapped_create_new_set(synthetic_update, context)
+            elif data == 'manage:add_existing':
+                return await wrapped_add_to_existing(synthetic_update, context)
+            elif data == 'manage:publication':
+                return await wrapped_manage_publication(synthetic_update, context)
+
+            return CHOOSING_ACTION
+
+        async def wrapped_handle_sticker_for_add_pack(update, context):
+            return await handle_sticker_for_add_pack(
+                update, context, self.gallery_service, self.sticker_service
+            )
+
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler('start', wrapped_start)],
             states={
@@ -183,6 +232,10 @@ class StickerBot:
                     MessageHandler(filters.Regex('^(Создать новый стикерсет)$'), wrapped_create_new_set),
                     MessageHandler(filters.Regex('^(Добавить в существующий)$'), wrapped_add_to_existing),
                     MessageHandler(filters.Regex('^(Управлять публикацией)$'), wrapped_manage_publication),
+                    CallbackQueryHandler(wrapped_handle_add_pack_from_sticker, pattern='^add_pack_from_sticker$'),
+                    CallbackQueryHandler(wrapped_handle_manage_stickers_menu, pattern='^manage_stickers_menu$'),
+                    CallbackQueryHandler(wrapped_handle_back_to_main, pattern='^back_to_main$'),
+                    CallbackQueryHandler(wrapped_handle_manage_callback, pattern='^manage:(create_new|add_existing|publication)$'),
                 ],
                 WAITING_NEW_TITLE: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_handle_new_set_title)
@@ -212,6 +265,9 @@ class StickerBot:
                 WAITING_MANAGE_CHOICE: [
                     CallbackQueryHandler(wrapped_handle_manage_choice),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_handle_manage_choice_text),
+                ],
+                WAITING_STICKER_PACK_LINK: [
+                    MessageHandler(filters.Sticker.ALL, wrapped_handle_sticker_for_add_pack),
                 ],
             },
             fallbacks=[CommandHandler('cancel', cancel)],

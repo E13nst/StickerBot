@@ -10,6 +10,7 @@ ADMIN_IDS = list(map(int, os.getenv('ADMIN_IDS', '').split(','))) if os.getenv('
 GALLERY_BASE_URL = os.getenv('GALLERY_BASE_URL')
 GALLERY_SERVICE_TOKEN = os.getenv('GALLERY_SERVICE_TOKEN')
 GALLERY_DEFAULT_LANGUAGE = os.getenv('GALLERY_DEFAULT_LANGUAGE', 'ru')
+MINIAPP_GALLERY_URL = os.getenv('MINIAPP_GALLERY_URL')
 
 # Логи
 LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'bot.log')
