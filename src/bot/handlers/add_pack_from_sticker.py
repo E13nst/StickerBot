@@ -154,7 +154,7 @@ async def handle_add_to_gallery(
                 sticker_set_id=None,
                 sticker_set_link=pack_link,
                 title=None,
-                is_public=True,
+                visibility="PUBLIC",
             )
         except Exception as e:
             logger.error(f"Error saving sticker set to gallery: {e}", exc_info=True)

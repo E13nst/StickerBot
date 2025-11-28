@@ -39,7 +39,7 @@ class GalleryService:
         sticker_set_id: Optional[int],
         sticker_set_link: str,
         title: Optional[str] = None,
-        is_public: bool = False,
+        visibility: str = "PRIVATE",
         language: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Сохраняет стикерсет в галерею"""
@@ -48,7 +48,7 @@ class GalleryService:
             sticker_set_id=sticker_set_id,
             sticker_set_link=sticker_set_link,
             title=title,
-            is_public=is_public,
+            visibility=visibility,
             language=language,
         )
     

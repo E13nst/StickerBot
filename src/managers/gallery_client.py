@@ -99,7 +99,7 @@ class GalleryClient:
         sticker_set_id: Optional[int],
         sticker_set_link: str,
         title: Optional[str] = None,
-        is_public: bool = False,
+        visibility: str = "PRIVATE",
         language: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         if not self.is_configured():
@@ -115,7 +115,7 @@ class GalleryClient:
 
             payload: Dict[str, Any] = {
                 'name': sticker_set_link,
-                'isPublic': is_public,
+                'visibility': visibility,
                 'authorId': user_id,
             }
 

@@ -213,7 +213,7 @@ async def handle_short_name(
             sticker_set_id=None,
             sticker_set_link=sticker_set_link,
             title=title,
-            is_public=False,
+            visibility="PRIVATE",
             language=GALLERY_DEFAULT_LANGUAGE,
         )
 
