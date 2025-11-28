@@ -99,6 +99,12 @@ async def handle_sticker_for_add_pack(
                     "Добавить в галерею",
                     callback_data=f"add_to_gallery:{set_name}"
                 )
+            ],
+            [
+                InlineKeyboardButton(
+                    "Главное меню",
+                    callback_data="back_to_main"
+                )
             ]
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)

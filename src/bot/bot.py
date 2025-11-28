@@ -237,23 +237,6 @@ class StickerBot:
             result = await handle_sticker_for_add_pack(
                 update, context, self.gallery_service, self.sticker_service
             )
-            # Если пользователь еще не запускал /start, запускаем его автоматически
-            if result == CHOOSING_ACTION:
-                # Показываем приветствие, если его еще не было
-                user = update.effective_user
-                name = user.first_name or "друг"
-                text = (
-                    f"Йо, {name}!\n"
-                    "Ты в зоне Stixly — наше комьюнити собирает самую большую галерею стикеров.\n\n"
-                    "Сейчас ты можешь:\n"
-                    "• Найти стикер в галерее\n"
-                    "• Добавить стикерсет в галерею (+10 ART)\n\n"
-                    "Дальше — умный поиск, конструктор стикеров и AI-инструменты."
-                )
-                from src.bot.handlers.start import main_menu_keyboard
-                message = update.effective_message
-                if message:
-                    await message.reply_text(text, reply_markup=main_menu_keyboard())
             return result
 
         async def wrapped_handle_add_to_gallery(update, context):
