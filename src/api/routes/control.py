@@ -1,6 +1,6 @@
 import asyncio
 import logging
-from fastapi import HTTPException, Depends
+from fastapi import HTTPException, Depends, Header
 from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
@@ -59,6 +59,26 @@ async def verify_token(credentials: HTTPAuthorizationCredentials = Depends(secur
         raise HTTPException(status_code=401, detail="Неверный токен аутентификации")
     
     return credentials.credentials
+
+
+# Альтернативная функция для получения токена из заголовка Authorization
+async def get_token_from_header(authorization: str = Header(..., description="Bearer token", alias="Authorization")) -> str:
+    """Получает токен из заголовка Authorization"""
+    if not authorization:
+        raise HTTPException(status_code=401, detail="Не указан заголовок Authorization")
+    
+    if not authorization.startswith("Bearer "):
+        raise HTTPException(status_code=401, detail="Неверный формат заголовка Authorization. Ожидается: Bearer <token>")
+    
+    token = authorization.replace("Bearer ", "")
+    
+    if not API_TOKEN:
+        raise HTTPException(status_code=500, detail="API_TOKEN не настроен")
+    
+    if token != API_TOKEN:
+        raise HTTPException(status_code=401, detail="Неверный токен аутентификации")
+    
+    return token
 
 
 def get_verify_token_dependency():

@@ -18,6 +18,7 @@ from src.api.routes.control import (
     EnableRequest,
     StatusResponse,
     get_verify_token_dependency,
+    get_token_from_header,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,13 +45,13 @@ async def webhook_endpoint(request: Request):
 
 
 @app.get("/api/control/status", response_model=StatusResponse, tags=["control"])
-async def status_endpoint(token=Depends(verify_token)):
+async def status_endpoint(token: str = Depends(get_token_from_header)):
     """Получить текущий статус бота"""
     return await get_status(token)
 
 
 @app.post("/api/control/start", tags=["control"])
-async def start_endpoint(token=Depends(verify_token)):
+async def start_endpoint(token: str = Depends(get_token_from_header)):
     """Запустить бота"""
     result = await start_bot(token)
     # Обновляем экземпляр бота в webhook
@@ -60,21 +61,21 @@ async def start_endpoint(token=Depends(verify_token)):
 
 
 @app.post("/api/control/stop", tags=["control"])
-async def stop_endpoint(token=Depends(verify_token)):
+async def stop_endpoint(token: str = Depends(get_token_from_header)):
     """Остановить бота"""
     return await stop_bot(token)
 
 
 @app.post("/api/control/mode", tags=["control"])
-async def mode_endpoint(request: ModeRequest, token=Depends(verify_token)):
+async def mode_endpoint(request_mode: ModeRequest, token: str = Depends(get_token_from_header)):
     """Переключить режим работы бота"""
-    return await set_mode(request, token)
+    return await set_mode(request_mode, token)
 
 
 @app.post("/api/control/enable", tags=["control"])
-async def enable_endpoint(request: EnableRequest, token=Depends(verify_token)):
+async def enable_endpoint(request_enable: EnableRequest, token: str = Depends(get_token_from_header)):
     """Включить/выключить бота"""
-    return await set_enabled(request, token)
+    return await set_enabled(request_enable, token)
 
 
 @app.get("/", tags=["info"])
@@ -118,11 +119,12 @@ def custom_openapi():
                     # Добавляем security
                     if "security" not in method_item:
                         method_item["security"] = [{"Bearer": []}]
-                    # Убираем лишние параметры scheme и credentials, если они есть
+                    # Убираем лишние параметры (scheme, credentials, Authorization)
+                    # так как они должны быть только в security схеме
                     if "parameters" in method_item:
                         method_item["parameters"] = [
                             p for p in method_item["parameters"]
-                            if p.get("name") not in ["scheme", "credentials"]
+                            if p.get("name") not in ["scheme", "credentials", "Authorization"]
                         ]
                         # Если параметров не осталось, удаляем ключ
                         if not method_item["parameters"]:
