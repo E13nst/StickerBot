@@ -149,8 +149,11 @@ async def start_bot(token: str = Depends(verify_token)):
     
     # Импортируем бота здесь, чтобы избежать циклических импортов
     from src.bot.bot import StickerBot
+    from src.api.routes.webhook import set_bot_instance as set_webhook_bot_instance
     
     bot_instance = StickerBot()
+    # Устанавливаем экземпляр в webhook endpoint
+    set_webhook_bot_instance(bot_instance)
     
     # Запускаем бота в фоновой задаче
     if mode == 'webhook':
@@ -201,6 +204,10 @@ async def stop_bot(token: str = Depends(verify_token)):
     
     bot_task = None
     bot_instance = None
+    
+    # Очищаем экземпляр в webhook endpoint
+    from src.api.routes.webhook import set_bot_instance as set_webhook_bot_instance
+    set_webhook_bot_instance(None)
     
     logger.info("Бот остановлен")
     
@@ -258,6 +265,9 @@ async def set_mode(request: ModeRequest, token: str = Depends(verify_token)):
         
         bot_task = None
         bot_instance = None  # Очищаем экземпляр бота после остановки
+        # Очищаем экземпляр в webhook endpoint
+        from src.api.routes.webhook import set_bot_instance as set_webhook_bot_instance
+        set_webhook_bot_instance(None)
     
     # Обновляем конфиг
     cm = get_config_manager()
@@ -271,8 +281,11 @@ async def set_mode(request: ModeRequest, token: str = Depends(verify_token)):
     
     # Автоматически запускаем бота в новом режиме
     from src.bot.bot import StickerBot
+    from src.api.routes.webhook import set_bot_instance as set_webhook_bot_instance
     
     bot_instance = StickerBot()
+    # Устанавливаем экземпляр в webhook endpoint
+    set_webhook_bot_instance(bot_instance)
     
     # Запускаем бота в фоновой задаче
     if request.mode == 'webhook':

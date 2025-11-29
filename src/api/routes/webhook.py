@@ -63,15 +63,21 @@ async def telegram_webhook(
         raise HTTPException(status_code=401, detail="Invalid secret token")
     
     # Токен верный - обрабатываем обновление
-    if not bot_instance or not bot_instance.application:
-        logger.warning("Получено обновление, но бот не инициализирован")
+    if not bot_instance:
+        client_ip = request.client.host if request.client else "unknown"
+        logger.warning(f"Получено обновление от IP {client_ip}, но bot_instance не установлен")
         return {"ok": False, "error": "Bot not initialized"}
+    
+    if not bot_instance.application:
+        client_ip = request.client.host if request.client else "unknown"
+        logger.warning(f"Получено обновление от IP {client_ip}, но application не инициализирован")
+        return {"ok": False, "error": "Bot application not initialized"}
     
     try:
         body = await request.body()
         client_ip = request.client.host if request.client else "unknown"
         
-        logger.debug(f"Обработка webhook обновления от IP: {client_ip}")
+        logger.info(f"Обработка webhook обновления от IP: {client_ip}, размер: {len(body)} байт")
         
         data = json.loads(body)
         
@@ -84,7 +90,7 @@ async def telegram_webhook(
         
         await bot_instance.application.process_update(update)
         
-        logger.debug(f"Webhook обновление успешно обработано от IP: {client_ip}")
+        logger.info(f"Webhook обновление успешно обработано от IP: {client_ip}, update_id: {update.update_id}")
         return {"ok": True}
         
     except json.JSONDecodeError as e:
