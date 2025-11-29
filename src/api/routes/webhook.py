@@ -1,8 +1,7 @@
 import json
 import logging
 import secrets
-from typing import Optional
-from fastapi import Request, HTTPException, Header, Depends
+from fastapi import Request, HTTPException
 
 from src.config.settings import WEBHOOK_SECRET_TOKEN, WEBHOOK_IP_CHECK_ENABLED
 from src.api.middleware.telegram_ip_check import verify_telegram_ip
@@ -19,14 +18,7 @@ def set_bot_instance(instance):
     bot_instance = instance
 
 
-async def telegram_webhook(
-    request: Request,
-    x_telegram_bot_api_secret_token: Optional[str] = Header(
-        None,
-        alias="X-Telegram-Bot-Api-Secret-Token",
-        description="Секретный токен для проверки подлинности запроса от Telegram"
-    )
-):
+async def telegram_webhook(request: Request):
     """
     Защищенный webhook endpoint для получения обновлений от Telegram
     
@@ -35,9 +27,18 @@ async def telegram_webhook(
     2. Rate limiting (защита от DoS)
     3. IP-адреса проверку (опционально, если WEBHOOK_IP_CHECK_ENABLED=true)
     """
+    client_ip = request.client.host if request.client else "unknown"
+    
+    # Получаем секретный токен из заголовка напрямую
+    x_telegram_bot_api_secret_token = request.headers.get("X-Telegram-Bot-Api-Secret-Token")
+    
+    logger.info(f"telegram_webhook вызван от IP: {client_ip}, заголовок токена: {'есть' if x_telegram_bot_api_secret_token else 'нет'}")
+    
     # Опциональная проверка IP-адреса Telegram
     if WEBHOOK_IP_CHECK_ENABLED:
+        logger.info(f"Проверка IP-адреса включена, проверяем IP: {client_ip}")
         await verify_telegram_ip(request)
+        logger.info(f"Проверка IP-адреса пройдена для: {client_ip}")
     
     # Проверка секретного токена (ОБЯЗАТЕЛЬНО)
     if not WEBHOOK_SECRET_TOKEN:
@@ -48,30 +49,39 @@ async def telegram_webhook(
         )
     
     if not x_telegram_bot_api_secret_token:
-        client_ip = request.client.host if request.client else "unknown"
         logger.warning(f"Попытка доступа к webhook без токена от IP: {client_ip}")
         raise HTTPException(status_code=401, detail="Missing secret token")
+    
+    # Убеждаемся, что токен - строка
+    if not isinstance(x_telegram_bot_api_secret_token, str):
+        logger.warning(f"Токен в заголовке имеет неверный тип от IP: {client_ip}")
+        raise HTTPException(status_code=401, detail="Invalid token format")
     
     # Сравниваем токен из заголовка с сохраненным токеном
     # Используем secrets.compare_digest для защиты от timing attacks
     if not secrets.compare_digest(x_telegram_bot_api_secret_token, WEBHOOK_SECRET_TOKEN):
-        client_ip = request.client.host if request.client else "unknown"
         logger.warning(
             f"Неверный секретный токен webhook от IP: {client_ip}, "
-            f"получен токен: {x_telegram_bot_api_secret_token[:10]}..."
+            f"получен токен: {x_telegram_bot_api_secret_token[:10] if len(x_telegram_bot_api_secret_token) > 10 else 'короткий'}..."
         )
         raise HTTPException(status_code=401, detail="Invalid secret token")
     
     # Токен верный - обрабатываем обновление
-    if not bot_instance or not bot_instance.application:
-        logger.warning("Получено обновление, но бот не инициализирован")
+    if not bot_instance:
+        client_ip = request.client.host if request.client else "unknown"
+        logger.warning(f"Получено обновление от IP {client_ip}, но bot_instance не установлен")
         return {"ok": False, "error": "Bot not initialized"}
+    
+    if not bot_instance.application:
+        client_ip = request.client.host if request.client else "unknown"
+        logger.warning(f"Получено обновление от IP {client_ip}, но application не инициализирован")
+        return {"ok": False, "error": "Bot application not initialized"}
     
     try:
         body = await request.body()
         client_ip = request.client.host if request.client else "unknown"
         
-        logger.debug(f"Обработка webhook обновления от IP: {client_ip}")
+        logger.info(f"Обработка webhook обновления от IP: {client_ip}, размер: {len(body)} байт")
         
         data = json.loads(body)
         
@@ -84,7 +94,7 @@ async def telegram_webhook(
         
         await bot_instance.application.process_update(update)
         
-        logger.debug(f"Webhook обновление успешно обработано от IP: {client_ip}")
+        logger.info(f"Webhook обновление успешно обработано от IP: {client_ip}, update_id: {update.update_id}")
         return {"ok": True}
         
     except json.JSONDecodeError as e:

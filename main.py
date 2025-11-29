@@ -7,6 +7,7 @@ from src.config.manager import ConfigManager
 from src.config.settings import CONFIG_PATH, API_PORT
 from src.api.server import app
 from src.api.routes.control import set_bot_instance, set_bot_task, bot_instance, bot_task
+from src.api.routes.webhook import set_bot_instance as set_webhook_bot_instance
 from src.bot.bot import StickerBot
 import uvicorn
 
@@ -37,6 +38,8 @@ async def start_bot_if_enabled():
     # Используем глобальные переменные из control routes
     bot_inst = StickerBot()
     set_bot_instance(bot_inst)
+    # Также устанавливаем экземпляр в webhook endpoint
+    set_webhook_bot_instance(bot_inst)
     
     if mode == 'webhook':
         task = asyncio.create_task(bot_inst.run_webhook())
@@ -63,6 +66,8 @@ async def stop_bot():
         
         set_bot_task(None)
         set_bot_instance(None)
+        # Очищаем экземпляр в webhook endpoint
+        set_webhook_bot_instance(None)
 
 
 def run_api_server_thread():
