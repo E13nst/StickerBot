@@ -290,77 +290,93 @@ class GalleryClient:
 
     def search_stickers_inline(
         self,
-        query_payload: Optional[Dict[str, Any]] = None,
+        query: str,
         limit: int = 20,
         offset: int = 0,
-    ) -> Optional[List[Dict[str, Any]]]:
+        language: Optional[str] = None,
+    ) -> List[Dict[str, Any]]:
         """
         Поиск стикеров для inline-режима
         
         Args:
-            query_payload: словарь с полями query_text, emoji, category_key, limit, offset
+            query: текст запроса для поиска
             limit: размер страницы
             offset: смещение для пагинации
+            language: язык для заголовков (опционально)
             
-        TODO: Точный URL endpoint и контракт JSON-ответа согласовываются с backend.
-        Предварительно используется /internal/stickers/search.
-        TODO: Backend должен принимать query_payload с полями query_text, emoji, category_key.
+        Returns:
+            Список стикеров с полями stickerFileId или file_id
         """
         if not self.is_configured():
             logger.warning("Gallery client is not configured. Skipping inline search.")
-            return None
+            return []
 
         try:
-            # TODO: Уточнить точный endpoint с backend командой
-            url = f"{self.base_url}/internal/stickers/search"
-            
-            # Формируем параметры запроса
-            # TODO: Backend должен принимать структурированный payload (query_text, emoji, category_key)
-            # Пока передаём как query для обратной совместимости
-            query_text = query_payload.get("query_text", "") if query_payload else ""
-            
+            url = f"{self.base_url}/api/stickersets/search"
             params = {
-                "query": query_text,  # TODO: заменить на структурированный payload
+                "query": query,
                 "limit": limit,
                 "offset": offset,
             }
             headers = {
                 "accept": "application/json",
                 "X-Service-Token": self.service_token,
-                "X-Language": self.default_language,
+                "X-Language": language or self.default_language,
             }
 
-            response = requests.get(url, params=params, headers=headers, timeout=5)
+            response = requests.get(url, params=params, headers=headers, timeout=10)
 
             if response.status_code == 200:
                 data = response.json()
-                # Ожидаем массив стикеров или объект с полем items
-                # Поддерживаем оба варианта для гибкости
-                if isinstance(data, dict):
+                # Поддерживаем оба формата: массив или объект с items
+                if isinstance(data, dict) and "items" in data:
                     items = data.get("items", [])
                 elif isinstance(data, list):
                     items = data
                 else:
-                    logger.warning(f"Неожиданный формат ответа от search endpoint: {type(data)}")
-                    return []
+                    items = []
                 
-                # Проверяем, что это список словарей
-                if isinstance(items, list):
-                    return items
-                else:
-                    logger.warning(f"Поле items не является списком: {type(items)}")
-                    return []
+                # Извлекаем file_id из структуры стикерсета
+                results: List[Dict[str, Any]] = []
+                for it in items:
+                    if not isinstance(it, dict):
+                        continue
+                    
+                    info = it.get("telegramStickerSetInfo") or {}
+                    
+                    # 1) Пробуем взять file_id из thumbnail/thumb
+                    thumb = info.get("thumbnail") or info.get("thumb") or {}
+                    file_id = thumb.get("file_id")
+                    
+                    # 2) Fallback - первый стикер из массива stickers
+                    if not file_id:
+                        stickers = info.get("stickers") or []
+                        if stickers and isinstance(stickers, list) and len(stickers) > 0:
+                            first_sticker = stickers[0] if isinstance(stickers[0], dict) else {}
+                            file_id = first_sticker.get("file_id")
+                    
+                    if not file_id:
+                        continue
+                    
+                    results.append({
+                        "file_id": file_id,
+                        "stickerFileId": file_id,  # для совместимости с handler
+                        "id": it.get("id"),
+                        "title": it.get("title"),
+                    })
+                
+                return results
 
             logger.error(
                 "Failed to search stickers inline. Status: %s, Response: %s",
                 response.status_code,
                 response.text,
             )
-            return None
+            return []
 
         except Exception as e:
             logger.error(f"Error during inline sticker search: {e}", exc_info=True)
-            return None
+            return []
 
     def search_sticker_sets_inline(
         self,

@@ -1,9 +1,11 @@
-import asyncio
 import logging
-from telegram import Update, InlineQueryResultArticle, InputTextMessageContent
+from typing import List
+from telegram import Update, InlineQueryResultCachedSticker
 from telegram.ext import ContextTypes
 
 logger = logging.getLogger(__name__)
+
+INLINE_LIMIT = 20
 
 
 async def handle_inline_query(
@@ -11,7 +13,7 @@ async def handle_inline_query(
     context: ContextTypes.DEFAULT_TYPE,
     gallery_service
 ) -> None:
-    """Обработчик inline-запросов для поиска стикерсетов"""
+    """Обработчик inline-запросов для поиска стикеров"""
     inline_query = update.inline_query
     
     if inline_query is None:
@@ -21,68 +23,53 @@ async def handle_inline_query(
     
     # Защита от пустого запроса
     if not raw_query:
-        await inline_query.answer([], cache_time=5)
+        await inline_query.answer([], cache_time=5, is_personal=True)
         return
     
-    # Парсинг offset из строки в int с fallback = 0
+    # Парсинг offset
     offset_str = inline_query.offset or "0"
     try:
         offset = int(offset_str)
-    except (ValueError, TypeError):
+    except ValueError:
         offset = 0
-        logger.warning(f"Не удалось распарсить offset '{offset_str}', используем 0")
-    
-    limit = 20  # размер страницы для inline-результатов
     
     # Вызов галереи
     try:
-        items = await gallery_service.search_sticker_sets_inline(
+        stickers = await gallery_service.search_stickers_inline(
             query=raw_query,
-            limit=limit,
+            limit=INLINE_LIMIT,
             offset=offset,
         )
         
-        if not items:
-            items = []
+        if not stickers:
+            stickers = []
     except Exception as e:
-        logger.error(f"Ошибка при поиске стикерсетов для inline-запроса: {e}", exc_info=True)
-        items = []
+        logger.error(f"Ошибка при поиске стикеров для inline-запроса: {e}", exc_info=True)
+        stickers = []
     
     # Формируем результаты
-    results: list[InlineQueryResultArticle] = []
-    for idx, item in enumerate(items):
-        item_id = item.get('id')
-        if not item_id:
-            logger.warning(f"Пропущен элемент без id: {item}")
+    results: List[InlineQueryResultCachedSticker] = []
+    for idx, item in enumerate(stickers):
+        file_id = item.get("stickerFileId") or item.get("file_id")
+        
+        if not file_id:
             continue
         
-        title = item.get('title', 'Без названия')
-        description = item.get('description', '')
-        preview_url = item.get('previewUrl')
-        
-        # Формируем ссылку на миниапп
-        miniapp_url = f"https://sticker-art-e13nst.amvera.io/miniapp/gallery?setId={item_id}"
-        
         results.append(
-            InlineQueryResultArticle(
-                id=f"set_{idx}_{item_id}",
-                title=title,
-                description=description,
-                input_message_content=InputTextMessageContent(miniapp_url),
-                thumb_url=preview_url or None,
+            InlineQueryResultCachedSticker(
+                id=f"st_{offset + idx}_{file_id}",
+                sticker_file_id=file_id,
             )
         )
     
-    # Пагинация: определяем next_offset
-    if len(results) == limit:
-        next_offset = str(offset + limit)
-    else:
-        next_offset = ""  # пустая строка, если результатов меньше limit
+    # Пагинация
+    next_offset = str(offset + INLINE_LIMIT) if len(stickers) == INLINE_LIMIT else ""
     
     # Отвечаем на inline-запрос
-    await inline_query.answer(
-        results=results,
-        next_offset=next_offset,
+    await update.inline_query.answer(
+        results,
         cache_time=30,
+        is_personal=True,
+        next_offset=next_offset,
     )
 

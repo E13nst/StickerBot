@@ -101,9 +101,9 @@ class GalleryService:
             short_info=short_info,
         )
     
-    def search_stickers_inline(
+    async def search_stickers_inline(
         self,
-        query_payload: Optional[Dict[str, Any]] = None,
+        query: str,
         limit: int = 20,
         offset: int = 0,
     ) -> List[Dict[str, Any]]:
@@ -111,38 +111,30 @@ class GalleryService:
         Поиск стикеров для inline-режима
         
         Args:
-            query_payload: словарь с полями query_text, emoji, category_key, limit, offset
+            query: текст запроса для поиска
             limit: размер страницы
             offset: смещение для пагинации
             
         Returns:
             Список стикеров с полями stickerFileId или file_id
         """
+        import asyncio
+        
+        if not query:
+            return []
+        
         if not self.client or not self.client.is_configured():
             return []
 
-        result = self.client.search_stickers_inline(
-            query_payload=query_payload,
-            limit=limit,
-            offset=offset,
+        result = await asyncio.to_thread(
+            self.client.search_stickers_inline,
+            query,
+            limit,
+            offset,
+            None,  # language - client использует свой default_language
         )
         
-        if not result:
-            return []
-        
-        # Нормализуем поля: поддерживаем stickerFileId и file_id
-        normalized_items = []
-        for item in result:
-            if not isinstance(item, dict):
-                continue
-            
-            # Оставляем как есть, если есть нужные поля
-            if "stickerFileId" in item or "file_id" in item:
-                normalized_items.append(item)
-            else:
-                logger.warning(f"Элемент не содержит stickerFileId или file_id: {item}")
-        
-        return normalized_items
+        return result if result else []
     
     async def search_sticker_sets_inline(
         self,
