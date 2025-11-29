@@ -2,8 +2,8 @@ import asyncio
 import logging
 from logging.handlers import RotatingFileHandler
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, CallbackQueryHandler, filters,
-    ConversationHandler, ContextTypes
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler, InlineQueryHandler,
+    filters, ConversationHandler, ContextTypes
 )
 from src.config.settings import (
     BOT_TOKEN,
@@ -58,6 +58,7 @@ from src.bot.handlers.manage_pub import (
 from src.bot.handlers.sticker_common import handle_sticker
 from src.bot.handlers.common import cancel, error_handler
 from src.bot.handlers.add_pack_from_sticker import handle_sticker_for_add_pack, handle_add_to_gallery
+from src.bot.handlers.inline import handle_inline_query
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -243,6 +244,11 @@ class StickerBot:
                 update, context, self.gallery_service
             )
 
+        async def wrapped_handle_inline_query(update, context):
+            return await handle_inline_query(
+                update, context, self.gallery_service
+            )
+
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler('start', wrapped_start)],
             states={
@@ -303,6 +309,10 @@ class StickerBot:
         self.application.add_handler(sticker_handler_before_start)
 
         self.application.add_handler(conv_handler)
+        
+        # InlineQueryHandler вне ConversationHandler, на уровне application
+        self.application.add_handler(InlineQueryHandler(wrapped_handle_inline_query))
+        
         self.application.add_error_handler(error_handler)
 
     async def run_polling(self):
