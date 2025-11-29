@@ -35,9 +35,14 @@ async def telegram_webhook(
     2. Rate limiting (защита от DoS)
     3. IP-адреса проверку (опционально, если WEBHOOK_IP_CHECK_ENABLED=true)
     """
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(f"telegram_webhook вызван от IP: {client_ip}, заголовок токена: {'есть' if x_telegram_bot_api_secret_token else 'нет'}")
+    
     # Опциональная проверка IP-адреса Telegram
     if WEBHOOK_IP_CHECK_ENABLED:
+        logger.info(f"Проверка IP-адреса включена, проверяем IP: {client_ip}")
         await verify_telegram_ip(request)
+        logger.info(f"Проверка IP-адреса пройдена для: {client_ip}")
     
     # Проверка секретного токена (ОБЯЗАТЕЛЬНО)
     if not WEBHOOK_SECRET_TOKEN:

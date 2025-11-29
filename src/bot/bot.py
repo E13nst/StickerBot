@@ -335,6 +335,12 @@ class StickerBot:
             await self.application.initialize()
             await self.application.start()
             
+            # Устанавливаем экземпляр бота в webhook endpoint после инициализации
+            # чтобы гарантировать, что application полностью готов
+            from src.api.routes.webhook import set_bot_instance as set_webhook_bot_instance
+            set_webhook_bot_instance(self)
+            logger.info("Экземпляр бота установлен в webhook endpoint после инициализации")
+            
             # Используем путь из настроек (по умолчанию /webhook)
             # Убеждаемся, что путь начинается с /
             webhook_path = WEBHOOK_PATH if WEBHOOK_PATH.startswith('/') else f'/{WEBHOOK_PATH}'
@@ -346,16 +352,29 @@ class StickerBot:
                     "WEBHOOK_SECRET_TOKEN не установлен! "
                     "Webhook будет работать без защиты. Рекомендуется установить токен."
                 )
-                await self.application.bot.set_webhook(url=full_webhook_url)
+                result = await self.application.bot.set_webhook(url=full_webhook_url)
+                logger.info(f"Результат установки webhook: {result}")
             else:
                 # Устанавливаем webhook с секретным токеном
-                await self.application.bot.set_webhook(
+                result = await self.application.bot.set_webhook(
                     url=full_webhook_url,
                     secret_token=WEBHOOK_SECRET_TOKEN
                 )
                 logger.info(
                     f"Webhook установлен: {full_webhook_url} "
                     f"с секретным токеном (первые 10 символов): {WEBHOOK_SECRET_TOKEN[:10]}..."
+                )
+                logger.info(f"Результат установки webhook: {result}")
+            
+            # Проверяем информацию о webhook для диагностики
+            webhook_info = await self.application.bot.get_webhook_info()
+            logger.info(f"Информация о webhook от Telegram: {webhook_info}")
+            
+            if webhook_info.url != full_webhook_url:
+                logger.warning(
+                    f"Несоответствие URL webhook! "
+                    f"Установлен: {full_webhook_url}, "
+                    f"Telegram сообщает: {webhook_info.url}"
                 )
             
             # В webhook режиме не нужно запускать отдельный сервер,

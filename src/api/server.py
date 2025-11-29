@@ -38,6 +38,25 @@ app = FastAPI(
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
+# Middleware для логирования всех входящих запросов
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """Логирует все входящие HTTP запросы"""
+    client_ip = request.client.host if request.client else "unknown"
+    logger.info(f"Входящий запрос: {request.method} {request.url.path} от IP: {client_ip}")
+    
+    # Специальное логирование для webhook
+    if request.url.path == WEBHOOK_PATH:
+        logger.info(f"WEBHOOK запрос от IP: {client_ip}, headers: {dict(request.headers)}")
+    
+    try:
+        response = await call_next(request)
+        logger.info(f"Ответ: {request.method} {request.url.path} - {response.status_code}")
+        return response
+    except Exception as e:
+        logger.error(f"Ошибка при обработке запроса {request.method} {request.url.path}: {e}", exc_info=True)
+        raise
+
 # Инициализация routes
 init_control(security)
 
@@ -49,6 +68,7 @@ verify_token = get_verify_token_dependency()
 @limiter.limit(WEBHOOK_RATE_LIMIT)
 async def webhook_endpoint(request: Request):
     """Webhook endpoint для получения обновлений от Telegram"""
+    logger.info(f"Запрос дошел до webhook_endpoint: {request.method} {request.url.path}")
     return await telegram_webhook(request)
 
 
@@ -98,6 +118,17 @@ async def root():
         "version": "1.0.0",
         "docs": "/docs",
         "redoc": "/redoc"
+    }
+
+
+@app.get("/health", tags=["info"])
+async def health():
+    """Проверка работоспособности сервера"""
+    from src.api.routes.webhook import bot_instance as webhook_bot_instance
+    return {
+        "status": "ok",
+        "webhook_bot_instance": "установлен" if webhook_bot_instance else "не установлен",
+        "webhook_path": WEBHOOK_PATH
     }
 
 
