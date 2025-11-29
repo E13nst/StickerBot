@@ -143,4 +143,41 @@ class GalleryService:
                 logger.warning(f"Элемент не содержит stickerFileId или file_id: {item}")
         
         return normalized_items
+    
+    async def search_sticker_sets_inline(
+        self,
+        query: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> List[Dict[str, Any]]:
+        """
+        Поиск стикерсетов для inline-режима
+        
+        Args:
+            query: текст запроса для поиска
+            limit: размер страницы
+            offset: смещение для пагинации
+            
+        Returns:
+            Список стикерсетов с полями id, title, description, previewUrl
+        """
+        import asyncio
+        
+        if not self.client or not self.client.is_configured():
+            return []
+        
+        result = await asyncio.to_thread(
+            self.client.search_sticker_sets_inline,
+            query,
+            limit,
+            offset
+        )
+        
+        if not result:
+            return []
+        
+        if isinstance(result, list):
+            return result
+        
+        return []
 

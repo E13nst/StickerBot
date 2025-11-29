@@ -298,14 +298,13 @@ class GalleryClient:
         Поиск стикеров для inline-режима
         
         Args:
-            query_payload: словарь с полями query_text, emoji, category_keys, limit, offset
+            query_payload: словарь с полями query_text, emoji, category_key, limit, offset
             limit: размер страницы
             offset: смещение для пагинации
             
         TODO: Точный URL endpoint и контракт JSON-ответа согласовываются с backend.
         Предварительно используется /internal/stickers/search.
-        TODO: Backend должен принимать query_payload с полями query_text, emoji, category_keys (список строк).
-        TODO: В query_payload доступны также emoji и category_keys для использования backend позже.
+        TODO: Backend должен принимать query_payload с полями query_text, emoji, category_key.
         """
         if not self.is_configured():
             logger.warning("Gallery client is not configured. Skipping inline search.")
@@ -316,9 +315,8 @@ class GalleryClient:
             url = f"{self.base_url}/internal/stickers/search"
             
             # Формируем параметры запроса
-            # TODO: Backend должен принимать структурированный payload (query_text, emoji, category_keys)
-            # TODO: category_keys (список) и emoji доступны в query_payload для использования backend позже
-            # Пока передаём только query_text как query для обратной совместимости
+            # TODO: Backend должен принимать структурированный payload (query_text, emoji, category_key)
+            # Пока передаём как query для обратной совместимости
             query_text = query_payload.get("query_text", "") if query_payload else ""
             
             params = {
@@ -362,5 +360,63 @@ class GalleryClient:
 
         except Exception as e:
             logger.error(f"Error during inline sticker search: {e}", exc_info=True)
+            return None
+
+    def search_sticker_sets_inline(
+        self,
+        query: str,
+        limit: int = 20,
+        offset: int = 0,
+    ) -> Optional[List[Dict[str, Any]]]:
+        """
+        Поиск стикерсетов для inline-режима
+        
+        Args:
+            query: текст запроса для поиска
+            limit: размер страницы
+            offset: смещение для пагинации
+            
+        Returns:
+            Список стикерсетов с полями id, title, description, previewUrl
+        """
+        if not self.is_configured():
+            logger.warning("Gallery client is not configured. Skipping sticker sets inline search.")
+            return None
+
+        try:
+            url = f"{self.base_url}/api/stickersets/search"
+            params = {
+                "query": query,
+                "limit": limit,
+                "offset": offset,
+            }
+            headers = {
+                "accept": "application/json",
+                "X-Service-Token": self.service_token,
+                "X-Language": self.default_language,
+            }
+
+            resp = requests.get(url, params=params, headers=headers, timeout=10)
+
+            if resp.status_code == 200:
+                data = resp.json()
+                # Ожидаем объект с полем items или массив напрямую
+                if isinstance(data, dict) and "items" in data:
+                    return data["items"]
+                elif isinstance(data, list):
+                    return data
+                else:
+                    logger.warning(f"Неожиданный формат ответа от search endpoint: {type(data)}")
+                    return []
+
+            logger.error(
+                "Failed to search sticker sets inline. Status: %s, Response: %s",
+                resp.status_code,
+                resp.text,
+            )
+            return None
+
+        except Exception as e:
+            logger.error(f"Error during inline sticker sets search: {e}", exc_info=True)
             return None
 
