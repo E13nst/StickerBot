@@ -377,6 +377,34 @@ class StickerBot:
                     f"Telegram сообщает: {webhook_info.url}"
                 )
             
+            # Проверяем наличие ошибок
+            if webhook_info.last_error_message:
+                logger.error(
+                    f"ОШИБКА WEBHOOK! Telegram не может доставить обновления:\n"
+                    f"  - Ошибка: {webhook_info.last_error_message}\n"
+                    f"  - Дата ошибки: {webhook_info.last_error_date}\n"
+                    f"  - Ожидающих обновлений: {webhook_info.pending_update_count}\n"
+                    f"  - IP адрес: {webhook_info.ip_address}"
+                )
+                
+                # Если ошибка SSL, даем рекомендации
+                if 'SSL' in webhook_info.last_error_message or 'certificate' in webhook_info.last_error_message.lower():
+                    logger.error(
+                        "⚠️  ПРОБЛЕМА С SSL СЕРТИФИКАТОМ!\n"
+                        "Telegram не может проверить SSL сертификат вашего сервера.\n"
+                        "Решения:\n"
+                        "1. Проверьте настройки SSL на Amvera - сертификат должен быть валидным\n"
+                        "2. Убедитесь, что домен правильно настроен в настройках Amvera\n"
+                        "3. Проверьте, что промежуточные сертификаты настроены правильно\n"
+                        "4. Попробуйте переустановить webhook после исправления SSL"
+                    )
+            
+            if webhook_info.pending_update_count > 0:
+                logger.warning(
+                    f"ВНИМАНИЕ: {webhook_info.pending_update_count} обновлений ожидают доставки. "
+                    "Проверьте логи на наличие ошибок."
+                )
+            
             # В webhook режиме не нужно запускать отдельный сервер,
             # обновления будут обрабатываться через FastAPI endpoint
             # Просто ждем сигнала остановки
