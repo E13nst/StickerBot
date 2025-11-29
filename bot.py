@@ -15,7 +15,7 @@ from config import (
     GALLERY_SERVICE_TOKEN,
     GALLERY_DEFAULT_LANGUAGE,
     LOG_FILE_PATH,
-    WEBHOOK_URL,
+    SERVICE_BASE_URL,
 )
 from gallery_client import GalleryClient
 from image_processor import ImageProcessor
@@ -982,10 +982,10 @@ class StickerBot:
     
     async def run_webhook(self):
         """Запуск бота в режиме webhook"""
-        if not WEBHOOK_URL:
-            raise ValueError("WEBHOOK_URL не установлен в переменных окружения")
+        if not SERVICE_BASE_URL:
+            raise ValueError("SERVICE_BASE_URL не установлен в переменных окружения")
         
-        logger.info(f"Запуск бота в режиме webhook: {WEBHOOK_URL}")
+        logger.info(f"Запуск бота в режиме webhook: {SERVICE_BASE_URL}")
         try:
             # Инициализация
             await self.application.initialize()
@@ -993,7 +993,7 @@ class StickerBot:
             
             # Устанавливаем webhook (обновления будут приходить на /webhook endpoint в FastAPI)
             webhook_path = "/webhook"
-            full_webhook_url = f"{WEBHOOK_URL.rstrip('/')}{webhook_path}"
+            full_webhook_url = f"{SERVICE_BASE_URL.rstrip('/')}{webhook_path}"
             await self.application.bot.set_webhook(url=full_webhook_url)
             logger.info(f"Webhook установлен: {full_webhook_url}")
             

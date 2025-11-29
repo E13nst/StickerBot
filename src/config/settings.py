@@ -16,7 +16,7 @@ MINIAPP_GALLERY_URL = os.getenv('MINIAPP_GALLERY_URL')
 LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'bot.log')
 
 # Webhook и API настройки
-WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+SERVICE_BASE_URL = os.getenv('SERVICE_BASE_URL')
 WEBHOOK_SECRET_TOKEN = os.getenv('WEBHOOK_SECRET_TOKEN')
 WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
 WEBHOOK_RATE_LIMIT = os.getenv('WEBHOOK_RATE_LIMIT', '100/minute')

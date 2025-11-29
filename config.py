@@ -20,7 +20,7 @@ STICKER_MAX_SIZE = 512 * 1024  # 512KB
 WEBP_QUALITY = 85
 
 # Webhook и API настройки
-WEBHOOK_URL = os.getenv('WEBHOOK_URL')
+SERVICE_BASE_URL = os.getenv('SERVICE_BASE_URL')
 API_TOKEN = os.getenv('API_TOKEN')
 API_PORT = int(os.getenv('API_PORT', '80'))
 CONFIG_PATH = os.getenv('CONFIG_PATH')

@@ -161,8 +161,8 @@ async def test_start_bot_success_webhook(
          patch('src.api.routes.control.bot_instance', None), \
          patch('src.api.routes.control.API_TOKEN', api_token), \
          patch('src.config.settings.API_TOKEN', api_token), \
-         patch('src.api.routes.control.WEBHOOK_URL', webhook_url), \
-         patch('src.config.settings.WEBHOOK_URL', webhook_url), \
+         patch('src.api.routes.control.SERVICE_BASE_URL', webhook_url), \
+         patch('src.config.settings.SERVICE_BASE_URL', webhook_url), \
          patch('src.bot.bot.StickerBot', mock_bot_class), \
          patch('asyncio.create_task', return_value=mock_task) as mock_create_task:
         
@@ -246,7 +246,7 @@ async def test_start_bot_disabled(
 async def test_start_bot_webhook_no_url(
     test_client, mock_config_manager, mock_bot_task_none, api_token
 ):
-    """Тест попытки запуска бота в режиме webhook без WEBHOOK_URL"""
+    """Тест попытки запуска бота в режиме webhook без SERVICE_BASE_URL"""
     # Arrange
     mock_config_manager.get_config.return_value = {
         'enabled': True,
@@ -258,8 +258,8 @@ async def test_start_bot_webhook_no_url(
          patch('src.api.routes.control.bot_task', mock_bot_task_none), \
          patch('src.api.routes.control.API_TOKEN', api_token), \
          patch('src.config.settings.API_TOKEN', api_token), \
-         patch('src.api.routes.control.WEBHOOK_URL', None), \
-         patch('src.config.settings.WEBHOOK_URL', None):
+         patch('src.api.routes.control.SERVICE_BASE_URL', None), \
+         patch('src.config.settings.SERVICE_BASE_URL', None):
         
         # Act
         response = await test_client.post(
@@ -271,7 +271,7 @@ async def test_start_bot_webhook_no_url(
     assert response.status_code == 400
     data = response.json()
     assert "detail" in data
-    assert "WEBHOOK_URL" in data["detail"]
+    assert "SERVICE_BASE_URL" in data["detail"]
 
 
 @pytest.mark.asyncio
@@ -414,8 +414,8 @@ async def test_set_mode_webhook_success(
          patch('src.api.routes.control.bot_task', mock_bot_task_none), \
          patch('src.api.routes.control.API_TOKEN', api_token), \
          patch('src.config.settings.API_TOKEN', api_token), \
-         patch('src.api.routes.control.WEBHOOK_URL', webhook_url), \
-         patch('src.config.settings.WEBHOOK_URL', webhook_url):
+         patch('src.api.routes.control.SERVICE_BASE_URL', webhook_url), \
+         patch('src.config.settings.SERVICE_BASE_URL', webhook_url):
         
         # Act
         response = await test_client.post(
@@ -465,14 +465,14 @@ async def test_set_mode_invalid_mode(
 async def test_set_mode_webhook_no_url(
     test_client, mock_config_manager, mock_bot_task_none, api_token
 ):
-    """Тест переключения на webhook без WEBHOOK_URL"""
+    """Тест переключения на webhook без SERVICE_BASE_URL"""
     # Arrange
     with patch('src.api.routes.control.get_config_manager', return_value=mock_config_manager), \
          patch('src.api.routes.control.bot_task', mock_bot_task_none), \
          patch('src.api.routes.control.API_TOKEN', api_token), \
          patch('src.config.settings.API_TOKEN', api_token), \
-         patch('src.api.routes.control.WEBHOOK_URL', None), \
-         patch('src.config.settings.WEBHOOK_URL', None):
+         patch('src.api.routes.control.SERVICE_BASE_URL', None), \
+         patch('src.config.settings.SERVICE_BASE_URL', None):
         
         # Act
         response = await test_client.post(
@@ -485,7 +485,7 @@ async def test_set_mode_webhook_no_url(
     assert response.status_code == 400
     data = response.json()
     assert "detail" in data
-    assert "WEBHOOK_URL" in data["detail"]
+    assert "SERVICE_BASE_URL" in data["detail"]
 
 
 @pytest.mark.asyncio

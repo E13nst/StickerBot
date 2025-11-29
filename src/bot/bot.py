@@ -11,7 +11,7 @@ from src.config.settings import (
     GALLERY_SERVICE_TOKEN,
     GALLERY_DEFAULT_LANGUAGE,
     LOG_FILE_PATH,
-    WEBHOOK_URL,
+    SERVICE_BASE_URL,
     WEBHOOK_SECRET_TOKEN,
     WEBHOOK_PATH,
     MINIAPP_GALLERY_URL,
@@ -348,10 +348,10 @@ class StickerBot:
     
     async def run_webhook(self):
         """Запуск бота в режиме webhook"""
-        if not WEBHOOK_URL:
-            raise ValueError("WEBHOOK_URL не установлен в переменных окружения")
+        if not SERVICE_BASE_URL:
+            raise ValueError("SERVICE_BASE_URL не установлен в переменных окружения")
         
-        logger.info(f"Запуск бота в режиме webhook: {WEBHOOK_URL}")
+        logger.info(f"Запуск бота в режиме webhook: {SERVICE_BASE_URL}")
         try:
             # Инициализация
             await self.application.initialize()
@@ -366,7 +366,7 @@ class StickerBot:
             # Используем путь из настроек (по умолчанию /webhook)
             # Убеждаемся, что путь начинается с /
             webhook_path = WEBHOOK_PATH if WEBHOOK_PATH.startswith('/') else f'/{WEBHOOK_PATH}'
-            full_webhook_url = f"{WEBHOOK_URL.rstrip('/')}{webhook_path}"
+            full_webhook_url = f"{SERVICE_BASE_URL.rstrip('/')}{webhook_path}"
             
             # Проверяем наличие секретного токена
             if not WEBHOOK_SECRET_TOKEN:

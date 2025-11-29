@@ -5,7 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
 
-from src.config.settings import API_TOKEN, WEBHOOK_URL
+from src.config.settings import API_TOKEN, SERVICE_BASE_URL
 from src.config.manager import ConfigManager
 
 logger = logging.getLogger(__name__)
@@ -141,10 +141,10 @@ async def start_bot(token: str = Depends(verify_token)):
     mode = config.get('mode', 'polling')
     
     if mode == 'webhook':
-        if not WEBHOOK_URL:
+        if not SERVICE_BASE_URL:
             raise HTTPException(
                 status_code=400,
-                detail="WEBHOOK_URL не установлен в переменных окружения. Необходим для webhook режима"
+                detail="SERVICE_BASE_URL не установлен в переменных окружения. Необходим для webhook режима"
             )
     
     # Импортируем бота здесь, чтобы избежать циклических импортов
@@ -223,7 +223,7 @@ async def set_mode(request: ModeRequest, token: str = Depends(verify_token)):
     
     - **mode**: 'polling' или 'webhook'
     
-    При переключении на webhook проверяется наличие WEBHOOK_URL в переменных окружения.
+    При переключении на webhook проверяется наличие SERVICE_BASE_URL в переменных окружения.
     Если бот запущен, он будет остановлен и автоматически запущен в новом режиме.
     Бот автоматически включается (enabled = true) при переключении режима.
     """
@@ -235,12 +235,12 @@ async def set_mode(request: ModeRequest, token: str = Depends(verify_token)):
             detail="Неверный режим. Допустимые значения: 'polling' или 'webhook'"
         )
     
-    # Проверка WEBHOOK_URL для webhook режима
+    # Проверка SERVICE_BASE_URL для webhook режима
     if request.mode == 'webhook':
-        if not WEBHOOK_URL:
+        if not SERVICE_BASE_URL:
             raise HTTPException(
                 status_code=400,
-                detail="WEBHOOK_URL не установлен в переменных окружения. Необходим для webhook режима"
+                detail="SERVICE_BASE_URL не установлен в переменных окружения. Необходим для webhook режима"
             )
     
     # Если бот запущен, останавливаем его
@@ -275,7 +275,7 @@ async def set_mode(request: ModeRequest, token: str = Depends(verify_token)):
     cm.set_enabled(True)  # Автоматически включаем бота при переключении режима
     
     if request.mode == 'webhook':
-        cm.set_webhook_url(WEBHOOK_URL)
+        cm.set_webhook_url(SERVICE_BASE_URL)
     
     logger.info(f"Режим изменен на {request.mode}, бот включен")
     
