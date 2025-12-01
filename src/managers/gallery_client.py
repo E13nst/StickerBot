@@ -298,6 +298,9 @@ class GalleryClient:
         """
         Поиск стикеров для inline-режима
         
+        Возвращает по одной превьюшке для каждого найденного стикерсета.
+        Для каждого сета берется первый стикер из telegramStickerSetInfo.stickers.
+        
         Args:
             query: текст запроса для поиска
             limit: размер страницы
@@ -305,7 +308,8 @@ class GalleryClient:
             language: язык для заголовков (опционально)
             
         Returns:
-            Список стикеров с полями stickerFileId или file_id
+            Список объектов с полями file_id, stickerFileId, setId, setTitle
+            (по одному элементу на стикерсет)
         """
         if not self.is_configured():
             logger.warning("Gallery client is not configured. Skipping inline search.")
@@ -328,41 +332,44 @@ class GalleryClient:
 
             if response.status_code == 200:
                 data = response.json()
-                # Поддерживаем оба формата: массив или объект с items
-                if isinstance(data, dict) and "items" in data:
-                    items = data.get("items", [])
-                elif isinstance(data, list):
-                    items = data
-                else:
-                    items = []
                 
-                # Извлекаем file_id из структуры стикерсета
+                # Поддерживаем оба формата: объект с content или сразу массив
+                if isinstance(data, dict) and "content" in data:
+                    sticker_sets = data.get("content", [])
+                elif isinstance(data, list):
+                    sticker_sets = data
+                else:
+                    sticker_sets = []
+                
+                # Для каждого стикерсета берем одну превьюшку (первый стикер)
                 results: List[Dict[str, Any]] = []
-                for it in items:
-                    if not isinstance(it, dict):
+                for sticker_set in sticker_sets:
+                    if not isinstance(sticker_set, dict):
                         continue
                     
-                    info = it.get("telegramStickerSetInfo") or {}
+                    # Достаем telegramStickerSetInfo
+                    telegram_info = sticker_set.get("telegramStickerSetInfo") or {}
+                    stickers = telegram_info.get("stickers") or []
                     
-                    # 1) Пробуем взять file_id из thumbnail/thumb
-                    thumb = info.get("thumbnail") or info.get("thumb") or {}
-                    file_id = thumb.get("file_id")
+                    # Проверяем наличие стикеров
+                    if not stickers or not isinstance(stickers, list) or len(stickers) == 0:
+                        continue
                     
-                    # 2) Fallback - первый стикер из массива stickers
-                    if not file_id:
-                        stickers = info.get("stickers") or []
-                        if stickers and isinstance(stickers, list) and len(stickers) > 0:
-                            first_sticker = stickers[0] if isinstance(stickers[0], dict) else {}
-                            file_id = first_sticker.get("file_id")
+                    # Берем первый стикер
+                    first_sticker = stickers[0]
+                    if not isinstance(first_sticker, dict):
+                        continue
                     
+                    file_id = first_sticker.get("file_id")
                     if not file_id:
                         continue
                     
+                    # Формируем объект результата
                     results.append({
                         "file_id": file_id,
-                        "stickerFileId": file_id,  # для совместимости с handler
-                        "id": it.get("id"),
-                        "title": it.get("title"),
+                        "stickerFileId": file_id,
+                        "setId": sticker_set.get("id"),
+                        "setTitle": sticker_set.get("title") or "Без названия",
                     })
                 
                 return results

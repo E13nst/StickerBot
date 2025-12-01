@@ -85,12 +85,18 @@ async def telegram_webhook(request: Request):
         
         data = json.loads(body)
         
+        # ЛОГ RAW UPDATE BODY
+        logger.info(f"RAW UPDATE BODY: {data}")
+        
         if not isinstance(data, dict):
             logger.error(f"Неверный формат обновления от IP {client_ip}")
             return {"ok": False, "error": "Invalid update format"}
         
         from telegram import Update
         update = Update.de_json(data, bot_instance.application.bot)
+        
+        # ЛОГ ПЕРЕД process_update
+        logger.info(f"UPDATE PROCESSED: update_id={update.update_id}, has_inline={bool(update.inline_query)}")
         
         await bot_instance.application.process_update(update)
         

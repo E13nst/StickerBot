@@ -14,6 +14,7 @@ from src.config.settings import (
     WEBHOOK_URL,
     WEBHOOK_SECRET_TOKEN,
     WEBHOOK_PATH,
+    MINIAPP_GALLERY_URL,
 )
 from src.services.sticker_service import StickerService
 from src.services.image_service import ImageService
@@ -97,6 +98,8 @@ class StickerBot:
             missing.append('GALLERY_BASE_URL')
         if not GALLERY_SERVICE_TOKEN:
             missing.append('GALLERY_SERVICE_TOKEN')
+        if not MINIAPP_GALLERY_URL:
+            missing.append('MINIAPP_GALLERY_URL')
 
         if missing:
             raise ValueError(
@@ -322,7 +325,16 @@ class StickerBot:
             # Инициализация и запуск
             await self.application.initialize()
             await self.application.start()
-            await self.application.updater.start_polling()
+            
+            # Удаляем webhook перед запуском polling
+            logger.info("Удаление webhook перед запуском polling...")
+            await self.application.bot.delete_webhook(drop_pending_updates=True)
+            logger.info("Webhook удален")
+            
+            # Указываем allowed_updates для inline_query
+            allowed_updates = ["inline_query", "message", "callback_query"]
+            logger.info(f"Starting polling with allowed_updates={allowed_updates}")
+            await self.application.updater.start_polling(allowed_updates=allowed_updates)
             
             # После start_polling() polling работает в фоне
             # Просто ждем сигнала остановки
@@ -362,17 +374,23 @@ class StickerBot:
                     "WEBHOOK_SECRET_TOKEN не установлен! "
                     "Webhook будет работать без защиты. Рекомендуется установить токен."
                 )
-                result = await self.application.bot.set_webhook(url=full_webhook_url)
-                logger.info(f"Результат установки webhook: {result}")
-            else:
-                # Устанавливаем webhook с секретным токеном
                 result = await self.application.bot.set_webhook(
                     url=full_webhook_url,
-                    secret_token=WEBHOOK_SECRET_TOKEN
+                    allowed_updates=["inline_query", "message", "callback_query"]  # Явно указываем inline_query
+                )
+                logger.info(f"Результат установки webhook: {result}, allowed_updates=['inline_query', 'message', 'callback_query']")
+            else:
+                # Устанавливаем webhook с секретным токеном
+                # allowed_updates по умолчанию включает все типы, включая inline_query
+                result = await self.application.bot.set_webhook(
+                    url=full_webhook_url,
+                    secret_token=WEBHOOK_SECRET_TOKEN,
+                    allowed_updates=["inline_query", "message", "callback_query"]  # Явно указываем inline_query
                 )
                 logger.info(
                     f"Webhook установлен: {full_webhook_url} "
-                    f"с секретным токеном (первые 10 символов): {WEBHOOK_SECRET_TOKEN[:10]}..."
+                    f"с секретным токеном (первые 10 символов): {WEBHOOK_SECRET_TOKEN[:10]}... "
+                    f"allowed_updates=['inline_query', 'message', 'callback_query']"
                 )
                 logger.info(f"Результат установки webhook: {result}")
             

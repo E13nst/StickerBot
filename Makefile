@@ -1,8 +1,14 @@
 .PHONY: install run stop restart status clean test lint format check help
 
 VENV ?= ./venv
-PYTHON := $(VENV)/bin/python
-PIP := $(VENV)/bin/pip
+# Определяем пути для Windows и Unix
+ifeq ($(OS),Windows_NT)
+    PYTHON := $(VENV)/Scripts/python.exe
+    PIP := $(VENV)/Scripts/pip.exe
+else
+    PYTHON := $(VENV)/bin/python
+    PIP := $(VENV)/bin/pip
+endif
 BOT_SCRIPT := main.py
 ENV_FILE := .env
 
@@ -21,25 +27,18 @@ help:
 
 venv:
 	@if [ ! -d $(VENV) ]; then \
-		python3 -m venv $(VENV); \
+		python -m venv $(VENV); \
 		echo "Виртуальное окружение создано"; \
 	fi
 
 install: venv
-	$(PIP) install --upgrade pip
-	$(PIP) install -r requirements.txt
+	@echo "Установка зависимостей..."
+	@python -m pip install --upgrade pip
+	@python -m pip install -r requirements.txt
 	@echo "Зависимости установлены"
 
 run:
-	@if [ ! -f $(ENV_FILE) ]; then \
-		echo "⚠️  Внимание: файл .env не найден. Создайте его с необходимыми переменными окружения."; \
-	fi
-	@if [ -f $(ENV_FILE) ]; then \
-		set -a; \
-		. $(ENV_FILE); \
-		set +a; \
-	fi; \
-	$(PYTHON) $(BOT_SCRIPT)
+	@python $(BOT_SCRIPT)
 
 stop:
 	@pkill -f "$(BOT_SCRIPT)" || echo "Бот не запущен"
@@ -63,21 +62,21 @@ test:
 		echo "⚠️  Виртуальное окружение не найдено. Запустите 'make install' сначала."; \
 		exit 1; \
 	fi
-	@$(PYTHON) -m pytest tests/ -v --tb=short || (echo "❌ Тесты завершились с ошибками" && exit 1)
+	@python -m pytest tests/ -v --tb=short || (echo "❌ Тесты завершились с ошибками" && exit 1)
 	@echo "✅ Все тесты пройдены успешно"
 
 check:
 	@echo "Проверка структуры проекта..."
-	@$(PYTHON) scripts/check_structure.py
+	@python scripts/check_structure.py
 
 lint:
 	@echo "Проверка кода линтером..."
-	@$(PYTHON) -m flake8 src/ main.py scripts/ --max-line-length=120 --ignore=E501,W503 || echo "flake8 не установлен, пропускаем"
-	@$(PYTHON) -m pylint src/ main.py scripts/ --disable=all --enable=E,F || echo "pylint не установлен, пропускаем"
+	@python -m flake8 src/ main.py scripts/ --max-line-length=120 --ignore=E501,W503 || echo "flake8 не установлен, пропускаем"
+	@python -m pylint src/ main.py scripts/ --disable=all --enable=E,F || echo "pylint не установлен, пропускаем"
 
 format:
 	@echo "Форматирование кода..."
-	@$(PYTHON) -m black src/ main.py scripts/ --line-length=120 || echo "black не установлен, пропускаем"
+	@python -m black src/ main.py scripts/ --line-length=120 || echo "black не установлен, пропускаем"
 
 clean:
 	@echo "Очистка временных файлов..."
