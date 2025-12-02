@@ -1,16 +1,25 @@
 .PHONY: install run stop restart status clean test lint format check help
 
 VENV ?= ./venv
-# Определяем пути для Windows и Unix
+BOT_SCRIPT := main.py
+ENV_FILE := .env
+
+# Определяем пути и команды для Windows и Unix
+# PYTHON - Python из виртуального окружения
+# PYTHON_CMD - системная команда Python (python на Windows, python3 на macOS/Linux)
 ifeq ($(OS),Windows_NT)
     PYTHON := $(VENV)/Scripts/python.exe
     PIP := $(VENV)/Scripts/pip.exe
+    PYTHON_CMD := python
+    RM := del /Q
+    FIND := where /R
 else
     PYTHON := $(VENV)/bin/python
     PIP := $(VENV)/bin/pip
+    PYTHON_CMD := python3
+    RM := rm -f
+    FIND := find
 endif
-BOT_SCRIPT := main.py
-ENV_FILE := .env
 
 help:
 	@echo "Доступные команды:"
@@ -26,19 +35,35 @@ help:
 	@echo "  make venv        - Создать виртуальное окружение"
 
 venv:
+ifeq ($(OS),Windows_NT)
+	@if not exist "$(VENV)" ($(PYTHON_CMD) -m venv $(VENV) && echo Виртуальное окружение создано)
+else
 	@if [ ! -d $(VENV) ]; then \
-		python -m venv $(VENV); \
+		$(PYTHON_CMD) -m venv $(VENV) 2>/dev/null || python -m venv $(VENV); \
 		echo "Виртуальное окружение создано"; \
 	fi
+endif
 
 install: venv
 	@echo "Установка зависимостей..."
-	@python -m pip install --upgrade pip
-	@python -m pip install -r requirements.txt
+	@$(PYTHON) -m pip install --upgrade pip
+	@$(PYTHON) -m pip install -r requirements.txt
 	@echo "Зависимости установлены"
 
 run:
-	@python $(BOT_SCRIPT)
+ifeq ($(OS),Windows_NT)
+	@if not exist "$(VENV)" (\
+		echo ⚠️  Виртуальное окружение не найдено. Запустите 'make install' сначала. && \
+		exit /b 1 \
+	)
+	@$(PYTHON) $(BOT_SCRIPT)
+else
+	@if [ ! -d $(VENV) ]; then \
+		echo "⚠️  Виртуальное окружение не найдено. Запустите 'make install' сначала."; \
+		exit 1; \
+	fi
+	@$(PYTHON) $(BOT_SCRIPT)
+endif
 
 stop:
 	@pkill -f "$(BOT_SCRIPT)" || echo "Бот не запущен"
@@ -58,25 +83,47 @@ status:
 
 test:
 	@echo "Запуск тестов..."
+ifeq ($(OS),Windows_NT)
+	@if not exist "$(VENV)" (\
+		echo ⚠️  Виртуальное окружение не найдено. Запустите 'make install' сначала. && \
+		exit /b 1 \
+	)
+	@$(PYTHON) -m pytest tests/ -v --tb=short || (echo ❌ Тесты завершились с ошибками && exit /b 1)
+	@echo ✅ Все тесты пройдены успешно
+else
 	@if [ ! -d $(VENV) ]; then \
 		echo "⚠️  Виртуальное окружение не найдено. Запустите 'make install' сначала."; \
 		exit 1; \
 	fi
-	@python -m pytest tests/ -v --tb=short || (echo "❌ Тесты завершились с ошибками" && exit 1)
+	@$(PYTHON) -m pytest tests/ -v --tb=short || (echo "❌ Тесты завершились с ошибками" && exit 1)
 	@echo "✅ Все тесты пройдены успешно"
+endif
 
 check:
 	@echo "Проверка структуры проекта..."
-	@python scripts/check_structure.py
+	@if [ -d $(VENV) ]; then \
+		$(PYTHON) scripts/check_structure.py; \
+	else \
+		$(PYTHON_CMD) scripts/check_structure.py 2>/dev/null || python scripts/check_structure.py; \
+	fi
 
 lint:
 	@echo "Проверка кода линтером..."
-	@python -m flake8 src/ main.py scripts/ --max-line-length=120 --ignore=E501,W503 || echo "flake8 не установлен, пропускаем"
-	@python -m pylint src/ main.py scripts/ --disable=all --enable=E,F || echo "pylint не установлен, пропускаем"
+	@if [ -d $(VENV) ]; then \
+		$(PYTHON) -m flake8 src/ main.py scripts/ --max-line-length=120 --ignore=E501,W503 || echo "flake8 не установлен, пропускаем"; \
+		$(PYTHON) -m pylint src/ main.py scripts/ --disable=all --enable=E,F || echo "pylint не установлен, пропускаем"; \
+	else \
+		$(PYTHON_CMD) -m flake8 src/ main.py scripts/ --max-line-length=120 --ignore=E501,W503 2>/dev/null || python -m flake8 src/ main.py scripts/ --max-line-length=120 --ignore=E501,W503 || echo "flake8 не установлен, пропускаем"; \
+		$(PYTHON_CMD) -m pylint src/ main.py scripts/ --disable=all --enable=E,F 2>/dev/null || python -m pylint src/ main.py scripts/ --disable=all --enable=E,F || echo "pylint не установлен, пропускаем"; \
+	fi
 
 format:
 	@echo "Форматирование кода..."
-	@python -m black src/ main.py scripts/ --line-length=120 || echo "black не установлен, пропускаем"
+	@if [ -d $(VENV) ]; then \
+		$(PYTHON) -m black src/ main.py scripts/ --line-length=120 || echo "black не установлен, пропускаем"; \
+	else \
+		$(PYTHON_CMD) -m black src/ main.py scripts/ --line-length=120 2>/dev/null || python -m black src/ main.py scripts/ --line-length=120 || echo "black не установлен, пропускаем"; \
+	fi
 
 clean:
 	@echo "Очистка временных файлов..."
