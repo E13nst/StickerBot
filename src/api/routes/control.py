@@ -5,7 +5,7 @@ from fastapi.security import HTTPAuthorizationCredentials
 from pydantic import BaseModel
 from typing import Optional
 
-from src.config.settings import API_TOKEN, SERVICE_BASE_URL
+from src.config.settings import API_TOKEN, SERVICE_BASE_URL, WEBHOOK_PATH
 from src.config.manager import ConfigManager
 
 logger = logging.getLogger(__name__)
@@ -275,7 +275,10 @@ async def set_mode(request: ModeRequest, token: str = Depends(verify_token)):
     cm.set_enabled(True)  # Автоматически включаем бота при переключении режима
     
     if request.mode == 'webhook':
-        cm.set_webhook_url(SERVICE_BASE_URL)
+        # Формируем полный URL webhook из SERVICE_BASE_URL + WEBHOOK_PATH
+        webhook_path = WEBHOOK_PATH if WEBHOOK_PATH.startswith('/') else f'/{WEBHOOK_PATH}'
+        full_webhook_url = f"{SERVICE_BASE_URL.rstrip('/')}{webhook_path}"
+        cm.set_webhook_url(full_webhook_url)
     
     logger.info(f"Режим изменен на {request.mode}, бот включен")
     

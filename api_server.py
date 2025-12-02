@@ -7,7 +7,7 @@ from typing import Optional
 import os
 import json
 
-from config import API_TOKEN, API_PORT, SERVICE_BASE_URL
+from config import API_TOKEN, API_PORT, SERVICE_BASE_URL, WEBHOOK_PATH
 from config_manager import ConfigManager
 
 logger = logging.getLogger(__name__)
@@ -242,7 +242,10 @@ async def set_mode(request: ModeRequest, token: str = Depends(verify_token)):
     cm.set_enabled(True)  # Автоматически включаем бота при переключении режима
     
     if request.mode == 'webhook':
-        cm.set_webhook_url(SERVICE_BASE_URL)
+        # Формируем полный URL webhook из SERVICE_BASE_URL + WEBHOOK_PATH
+        webhook_path = WEBHOOK_PATH if WEBHOOK_PATH.startswith('/') else f'/{WEBHOOK_PATH}'
+        full_webhook_url = f"{SERVICE_BASE_URL.rstrip('/')}{webhook_path}"
+        cm.set_webhook_url(full_webhook_url)
     
     logger.info(f"Режим изменен на {request.mode}, бот включен")
     

@@ -21,6 +21,7 @@ WEBP_QUALITY = 85
 
 # Webhook и API настройки
 SERVICE_BASE_URL = os.getenv('SERVICE_BASE_URL')
+WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
 API_TOKEN = os.getenv('API_TOKEN')
 API_PORT = int(os.getenv('API_PORT', '80'))
 CONFIG_PATH = os.getenv('CONFIG_PATH')
