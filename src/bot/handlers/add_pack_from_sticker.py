@@ -138,6 +138,8 @@ async def handle_add_to_gallery(
     """Обработчик кнопки 'Добавить в галерею'"""
     query = update.callback_query
     
+    logger.info(f"handle_add_to_gallery called: query={query}, callback_data={query.data if query else 'None'}")
+    
     if not query:
         logger.error("handle_add_to_gallery вызван без callback_query")
         return CHOOSING_ACTION

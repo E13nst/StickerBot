@@ -243,6 +243,7 @@ class StickerBot:
             return result
 
         async def wrapped_handle_add_to_gallery(update, context):
+            logger.info(f"wrapped_handle_add_to_gallery called with callback_data: {update.callback_query.data if update.callback_query else 'None'}")
             return await handle_add_to_gallery(
                 update, context, self.gallery_service
             )
@@ -298,7 +299,11 @@ class StickerBot:
                     MessageHandler(filters.Sticker.ALL, wrapped_handle_sticker_for_add_pack),
                 ],
             },
-            fallbacks=[CommandHandler('cancel', cancel)],
+            fallbacks=[
+                CommandHandler('cancel', cancel),
+                # Добавляем обработчик кнопки в fallbacks, чтобы он срабатывал в любом состоянии
+                CallbackQueryHandler(wrapped_handle_add_to_gallery, pattern='^add_to_gallery:'),
+            ],
             allow_reentry=True
         )
 
@@ -312,6 +317,14 @@ class StickerBot:
         self.application.add_handler(sticker_handler_before_start)
 
         self.application.add_handler(conv_handler)
+        
+        # Обработчик кнопки "Добавить в галерею" на уровне application,
+        # чтобы он срабатывал независимо от состояния ConversationHandler
+        add_to_gallery_handler = CallbackQueryHandler(
+            wrapped_handle_add_to_gallery,
+            pattern='^add_to_gallery:'
+        )
+        self.application.add_handler(add_to_gallery_handler)
         
         # InlineQueryHandler вне ConversationHandler, на уровне application
         self.application.add_handler(InlineQueryHandler(wrapped_handle_inline_query))
