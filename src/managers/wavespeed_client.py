@@ -8,8 +8,8 @@ import httpx
 logger = logging.getLogger(__name__)
 
 WAVESPEED_BASE_URL = "https://api.wavespeed.ai/api/v3"
-SUBMIT_TIMEOUT = httpx.Timeout(connect=5.0, read=20.0)
-GET_RESULT_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0)
+SUBMIT_TIMEOUT = httpx.Timeout(connect=5.0, read=20.0, write=5.0, pool=5.0)
+GET_RESULT_TIMEOUT = httpx.Timeout(connect=5.0, read=10.0, write=5.0, pool=5.0)
 MAX_RETRIES = 2
 
 
