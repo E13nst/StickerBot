@@ -87,9 +87,9 @@ async def test_update_message_with_image_should_convert_to_webp_never_uses_photo
 
 
 @pytest.mark.asyncio
-async def test_update_message_with_image_should_convert_to_webp_fallback_to_text_for_inline(mock_query, mock_context):
-    """Тест: при should_convert_to_webp=True и inline_message_id, при ошибке редактирования показывается текст, а не фото"""
-    from telegram import InputMediaPhoto
+async def test_update_message_with_image_should_convert_to_webp_fallback_to_photo_for_inline(mock_query, mock_context):
+    """Тест: при should_convert_to_webp=True и inline_message_id, при ошибке document редактирования пробуется photo fallback"""
+    from telegram import InputMediaPhoto, InputMediaDocument
     
     # Arrange
     image_url = "https://example.com/image.png"
@@ -113,8 +113,23 @@ async def test_update_message_with_image_should_convert_to_webp_fallback_to_text
         mock_validate.return_value = True
         mock_convert.return_value = test_webp_bytes
         
-        # Мокаем ошибку редактирования
-        mock_context.bot.edit_message_media = AsyncMock(side_effect=TelegramError("Edit failed"))
+        # Мокаем: document fail, photo success
+        call_count = 0
+        def mock_edit_media(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            media = kwargs.get("media")
+            if call_count == 1 and isinstance(media, InputMediaDocument):
+                # Первый вызов (document) - ошибка
+                raise TelegramError("Document edit failed")
+            elif call_count == 2 and isinstance(media, InputMediaPhoto):
+                # Второй вызов (photo) - успех
+                return AsyncMock()
+            else:
+                raise TelegramError("Unexpected call")
+        
+        mock_context.bot.edit_message_media = AsyncMock(side_effect=mock_edit_media)
+        mock_context.bot.username = "test_bot"
         
         # Act
         await update_message_with_image(
@@ -126,16 +141,73 @@ async def test_update_message_with_image_should_convert_to_webp_fallback_to_text
             should_convert_to_webp=True,
         )
         
-        # Assert: проверяем, что был вызван edit_message_text, а не send_photo
-        mock_context.bot.edit_message_text.assert_called_once()
-        call_args = mock_context.bot.edit_message_text.call_args
-        assert "transparent file" in call_args.kwargs.get("text", "")
+        # Assert: проверяем, что edit_message_media был вызван дважды (document, затем photo)
+        assert mock_context.bot.edit_message_media.call_count == 2
+        
+        # Проверяем, что edit_message_text НЕ был вызван (photo fallback сработал)
+        mock_context.bot.edit_message_text.assert_not_called()
         
         # Проверяем, что send_photo НЕ был вызван
         mock_context.bot.send_photo.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_message_with_image_should_convert_to_webp_double_fail_for_inline(mock_query, mock_context):
+    """Тест: при should_convert_to_webp=True и inline_message_id, при двойном фейле (document + photo) показывается текст"""
+    from telegram import InputMediaPhoto, InputMediaDocument
+    
+    # Arrange
+    image_url = "https://example.com/image.png"
+    prompt_hash = "test_hash"
+    caption = "Test caption"
+    
+    # Устанавливаем inline_message_id
+    mock_query.inline_message_id = "inline_123"
+    mock_query.message = None  # Для inline нет message
+    
+    test_image_bytes = b"fake_image_data"
+    test_webp_bytes = b"fake_webp_data"
+    
+    mock_wavespeed_client = mock_context.bot_data["wavespeed_client"]
+    mock_wavespeed_client.download_image = AsyncMock(return_value=test_image_bytes)
+    
+    # Мокаем функции конвертации
+    with patch("src.bot.handlers.generation.convert_to_webp_rgba") as mock_convert, \
+         patch("src.bot.handlers.generation.validate_alpha_channel") as mock_validate:
         
-        # Проверяем, что edit_message_media был вызван (пытались отредактировать)
-        mock_context.bot.edit_message_media.assert_called_once()
+        mock_validate.return_value = True
+        mock_convert.return_value = test_webp_bytes
+        
+        # Мокаем: document fail, photo fail
+        call_count = 0
+        def mock_edit_media(*args, **kwargs):
+            nonlocal call_count
+            call_count += 1
+            raise TelegramError(f"Edit failed {call_count}")
+        
+        mock_context.bot.edit_message_media = AsyncMock(side_effect=mock_edit_media)
+        mock_context.bot.username = "test_bot"
+        
+        # Act
+        await update_message_with_image(
+            query=mock_query,
+            context=mock_context,
+            image_url=image_url,
+            prompt_hash=prompt_hash,
+            caption=caption,
+            should_convert_to_webp=True,
+        )
+        
+        # Assert: проверяем, что edit_message_media был вызван дважды (document, затем photo)
+        assert mock_context.bot.edit_message_media.call_count == 2
+        
+        # Проверяем, что edit_message_text был вызван (last resort)
+        mock_context.bot.edit_message_text.assert_called_once()
+        call_args = mock_context.bot.edit_message_text.call_args
+        assert "cannot preview media" in call_args.kwargs.get("text", "").lower()
+        
+        # Проверяем, что send_photo НЕ был вызван
+        mock_context.bot.send_photo.assert_not_called()
 
 
 @pytest.mark.asyncio
