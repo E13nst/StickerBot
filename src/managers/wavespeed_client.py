@@ -160,6 +160,78 @@ class WaveSpeedClient:
             logger.error(f"WaveSpeed network error: {e}")
             return None
     
+    async def submit_background_remover(self, image_url: str) -> str:
+        """
+        Отправить задачу на удаление фона
+        
+        Args:
+            image_url: URL изображения из результата flux-schnell
+            
+        Returns:
+            request_id
+            
+        Raises:
+            Exception при ошибке API
+        """
+        url = f"{WAVESPEED_BASE_URL}/wavespeed-ai/image-background-remover"
+        
+        payload = {
+            "enable_base64_output": False,
+            "enable_sync_mode": False,
+            "image": image_url,
+        }
+        
+        # Логируем только домен + последний сегмент пути (без полного URL)
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(image_url)
+            log_url = f"{parsed.netloc}{parsed.path.split('/')[-1]}" if parsed.path else "image_url"
+        except Exception:
+            log_url = "image_url"
+        
+        # Ретраи на сетевые ошибки/5xx/429
+        last_exception = None
+        for attempt in range(MAX_RETRIES + 1):
+            try:
+                response = await self._client.post(url, json=payload, timeout=SUBMIT_TIMEOUT)
+                response.raise_for_status()
+                
+                data = response.json()
+                request_id = data.get("id") or data.get("requestId")
+                
+                if not request_id:
+                    raise ValueError(f"Invalid response from WaveSpeed API: {data}")
+                
+                logger.info(f"WaveSpeed bg-remover task submitted: request_id={request_id}, image={log_url}")
+                return request_id
+                
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code in (429, 500, 502, 503, 504):
+                    if attempt < MAX_RETRIES:
+                        wait_time = (2 ** attempt) + random.uniform(0, 1)
+                        logger.warning(
+                            f"WaveSpeed API error {e.response.status_code}, "
+                            f"retrying in {wait_time:.1f}s (attempt {attempt + 1}/{MAX_RETRIES + 1})"
+                        )
+                        await asyncio.sleep(wait_time)
+                        last_exception = e
+                        continue
+                raise
+            except (httpx.RequestError, httpx.TimeoutException) as e:
+                if attempt < MAX_RETRIES:
+                    wait_time = (2 ** attempt) + random.uniform(0, 1)
+                    logger.warning(
+                        f"WaveSpeed network error, retrying in {wait_time:.1f}s "
+                        f"(attempt {attempt + 1}/{MAX_RETRIES + 1}): {e}"
+                    )
+                    await asyncio.sleep(wait_time)
+                    last_exception = e
+                    continue
+                raise
+        
+        if last_exception:
+            raise last_exception
+    
     async def close(self):
         """Закрыть клиент"""
         await self._client.aclose()

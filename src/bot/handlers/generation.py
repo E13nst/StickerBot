@@ -13,6 +13,7 @@ from telegram.error import TelegramError
 from src.config.settings import (
     WAVESPEED_SYSTEM_PROMPT,
     WAVESPEED_MAX_POLL_SECONDS,
+    WAVESPEED_BG_REMOVE_ENABLED,
     MINIAPP_GALLERY_URL,
 )
 
@@ -199,51 +200,42 @@ async def run_generation_and_update_message(
     context: ContextTypes.DEFAULT_TYPE,
     seed: int = -1,
 ) -> None:
-    """Фоновая задача для генерации и обновления сообщения"""
+    """Фоновая задача для генерации и обновления сообщения (2-stage pipeline: flux -> bg-remover)"""
     quota_manager = context.bot_data.get("quota_manager")
     wavespeed_client = context.bot_data.get("wavespeed_client")
     
+    # Общий deadline для обеих стадий
+    overall_deadline = time.time() + WAVESPEED_MAX_POLL_SECONDS
+    poll_interval_base = 1.5
+    
     try:
-        # Отправляем задачу
-        request_id = await wavespeed_client.submit_flux_schnell(
-            final_prompt, seed=seed
+        # Stage 1: Flux-schnell генерация
+        flux_request_id = await wavespeed_client.submit_flux_schnell(
+            final_prompt, seed=seed, output_format="png"
         )
         
-        # Polling с jitter
-        start_time = time.time()
-        poll_interval_base = 1.5
-        max_poll_seconds = WAVESPEED_MAX_POLL_SECONDS
-        
-        while time.time() - start_time < max_poll_seconds:
+        # Polling flux result
+        flux_image_url = None
+        while time.time() < overall_deadline:
             await asyncio.sleep(poll_interval_base + random.uniform(-0.3, 0.3))
             
-            result = await wavespeed_client.get_prediction_result(request_id)
+            result = await wavespeed_client.get_prediction_result(flux_request_id)
             if not result:
                 continue
             
             status = result.get("status", "").lower()
             
             if status == "completed":
-                # Получаем URL изображения
                 outputs = result.get("outputs", [])
                 if not outputs:
-                    logger.error(f"No outputs in completed result: {result}")
+                    logger.error(f"No outputs in flux result: {result}")
                     break
-                
-                image_url = outputs[0]
-                
-                # Обновляем сообщение с изображением
-                await update_message_with_image(
-                    query=query,
-                    context=context,
-                    image_url=image_url,
-                    prompt_hash=prompt_hash,
-                )
-                return
+                flux_image_url = outputs[0]
+                break
                 
             elif status == "failed":
                 error_msg = result.get("error", "Unknown error")
-                logger.error(f"WaveSpeed generation failed: {error_msg}")
+                logger.error(f"WaveSpeed flux generation failed: {error_msg}")
                 await update_message_with_error(
                     query=query,
                     context=context,
@@ -252,13 +244,75 @@ async def run_generation_and_update_message(
                 )
                 return
         
-        # Timeout
-        logger.warning(f"WaveSpeed generation timeout after {max_poll_seconds}s")
-        await update_message_with_error(
+        if not flux_image_url:
+            logger.warning(f"WaveSpeed flux generation timeout or failed")
+            await update_message_with_error(
+                query=query,
+                context=context,
+                prompt_hash=prompt_hash,
+                error_msg="Timed out",
+            )
+            return
+        
+        # Stage 2: Background removal (если включено)
+        final_image_url = flux_image_url
+        bg_removal_success = False
+        
+        if WAVESPEED_BG_REMOVE_ENABLED:
+            # Обновляем статус (опционально, максимум 1 дополнительный edit)
+            try:
+                status_text = "🧼 Removing background…"
+                if query.inline_message_id:
+                    await context.bot.edit_message_text(
+                        inline_message_id=query.inline_message_id,
+                        text=status_text,
+                    )
+                else:
+                    await query.message.edit_text(status_text)
+            except Exception as e:
+                logger.debug(f"Could not update status to bg-removal: {e}")
+            
+            try:
+                bg_request_id = await wavespeed_client.submit_background_remover(flux_image_url)
+                
+                # Polling bg-remover result (в рамках оставшегося времени)
+                while time.time() < overall_deadline:
+                    await asyncio.sleep(poll_interval_base + random.uniform(-0.3, 0.3))
+                    
+                    result = await wavespeed_client.get_prediction_result(bg_request_id)
+                    if not result:
+                        continue
+                    
+                    status = result.get("status", "").lower()
+                    
+                    if status == "completed":
+                        outputs = result.get("outputs", [])
+                        if outputs:
+                            final_image_url = outputs[0]  # PNG с прозрачностью
+                            bg_removal_success = True
+                            break
+                    
+                    elif status == "failed":
+                        logger.warning(f"Background removal failed, using flux result as fallback")
+                        break
+                
+                if not bg_removal_success:
+                    logger.info(f"Background removal timeout or failed, using flux result as fallback")
+                    
+            except Exception as e:
+                logger.warning(f"Background removal error, using flux result as fallback: {e}")
+        
+        # Обновляем сообщение с финальным изображением
+        caption = "✅ Generated by STIXLY"
+        if WAVESPEED_BG_REMOVE_ENABLED and not bg_removal_success:
+            caption = "✅ Generated by STIXLY (bg removal failed)"
+        
+        await update_message_with_image(
             query=query,
             context=context,
+            image_url=final_image_url,
             prompt_hash=prompt_hash,
-            error_msg="Timed out",
+            caption=caption,
         )
         
     except Exception as e:
@@ -280,6 +334,7 @@ async def update_message_with_image(
     context: ContextTypes.DEFAULT_TYPE,
     image_url: str,
     prompt_hash: str,
+    caption: str = "✅ Generated by STIXLY",
 ) -> None:
     """Обновить сообщение с изображением (с fallback на upload)"""
     # Создаем кнопки
@@ -306,7 +361,7 @@ async def update_message_with_image(
     try:
         media = InputMediaPhoto(
             media=image_url,
-            caption="✅ Generated by STIXLY",
+            caption=caption,
         )
         
         if query.inline_message_id:
@@ -341,7 +396,7 @@ async def update_message_with_image(
                 
                 media = InputMediaPhoto(
                     media=image_file,
-                    caption="✅ Generated by STIXLY",
+                    caption=caption,
                 )
                 
                 if query.inline_message_id:
