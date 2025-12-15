@@ -11,7 +11,6 @@ from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 
 from src.config.settings import (
-    WAVESPEED_SYSTEM_PROMPT,
     WAVESPEED_MAX_POLL_SECONDS,
     WAVESPEED_BG_REMOVE_ENABLED,
     MINIAPP_GALLERY_URL,
@@ -79,8 +78,8 @@ async def handle_generate_callback(
             await query.answer(message, show_alert=True)
         return
     
-    # Собираем final_prompt
-    final_prompt = f"{WAVESPEED_SYSTEM_PROMPT}\n\nUser prompt: {user_prompt}"
+    # Используем промпт пользователя напрямую
+    final_prompt = user_prompt
     
     # Быстро отвечаем
     await query.answer("Generating…")
@@ -159,8 +158,8 @@ async def handle_regenerate_callback(
             await query.answer(message, show_alert=True)
         return
     
-    # Собираем final_prompt (тот же промпт, но новый seed)
-    final_prompt = f"{WAVESPEED_SYSTEM_PROMPT}\n\nUser prompt: {user_prompt}"
+    # Используем промпт пользователя напрямую (тот же промпт, но новый seed)
+    final_prompt = user_prompt
     
     # Быстро отвечаем
     await query.answer("Regenerating…")

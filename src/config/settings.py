@@ -27,12 +27,6 @@ CONFIG_PATH = os.getenv('CONFIG_PATH')
 
 # WaveSpeed API для inline generation
 WAVESPEED_API_KEY = os.getenv('WAVESPEED_API_KEY')
-WAVESPEED_SYSTEM_PROMPT = (
-    "You generate Telegram sticker-style images. "
-    "Output must look like a clean sticker with a transparent-friendly composition, "
-    "clear silhouette, minimal background, high contrast, cute/manga vibe. "
-    "No text unless user explicitly asks. Centered subject, readable at small size."
-)
 WAVESPEED_MAX_POLL_SECONDS = int(os.getenv('WAVESPEED_MAX_POLL_SECONDS', '30'))
 WAVESPEED_INLINE_CACHE_TIME = int(os.getenv('WAVESPEED_INLINE_CACHE_TIME', '5'))
 WAVESPEED_BG_REMOVE_ENABLED = os.getenv('WAVESPEED_BG_REMOVE_ENABLED', '1') == '1'

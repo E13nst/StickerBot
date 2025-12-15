@@ -498,7 +498,7 @@ async def test_full_generation_pipeline_with_bg_removal(real_client):
     import asyncio
     import time
     
-    prompt = "Trump with cigar"
+    prompt = "Putin with guitar"
     max_wait_time = 45  # Максимальное время ожидания в секундах (генерация ~15 сек, удаление фона ~15 сек)
     poll_interval = 1.0  # Интервал опроса в секундах (быстрее реагируем на завершение)
     
