@@ -5,6 +5,7 @@ from telegram.ext import ContextTypes
 
 from src.bot.states import WAITING_STICKER_PACK_LINK, CHOOSING_ACTION
 from src.bot.handlers.start import main_menu_keyboard
+from src.utils.links import create_miniapp_deeplink, create_miniapp_deeplink_simple
 
 logger = logging.getLogger(__name__)
 
@@ -85,10 +86,18 @@ async def handle_sticker_for_add_pack(
         keyboard = []
         set_id = check_result.get('id')
         if set_id:
+            # Добавляем текстовую ссылку на MiniApp в сообщение
+            miniapp_url = f"https://sticker-art-e13nst.amvera.io/miniapp/gallery?set_id={set_id}"
+            bot_username = context.bot.username
+            if bot_username:
+                # Передаем только set_id для простоты обработки в MiniApp
+                miniapp_deeplink = create_miniapp_deeplink_simple(bot_username, f"set_id={set_id}")
+                text += f"\n\nПосмотреть в Stixly: {miniapp_deeplink}"
+            
             keyboard.append([
                 InlineKeyboardButton(
                     "Посмотреть в Stixly",
-                    web_app=WebAppInfo(url=f"https://sticker-art-e13nst.amvera.io/miniapp/gallery?set_id={set_id}")
+                    web_app=WebAppInfo(url=miniapp_url)
                 )
             ])
         keyboard.append([
@@ -196,10 +205,18 @@ async def handle_add_to_gallery(
         keyboard = []
         set_id = result.get('id')
         if set_id:
+            # Добавляем текстовую ссылку на MiniApp в сообщение
+            miniapp_url = f"https://sticker-art-e13nst.amvera.io/miniapp/gallery?set_id={set_id}"
+            bot_username = context.bot.username
+            if bot_username:
+                # Передаем только set_id для простоты обработки в MiniApp
+                miniapp_deeplink = create_miniapp_deeplink_simple(bot_username, f"set_id={set_id}")
+                success_text += f"\n\nПосмотреть в Stixly: {miniapp_deeplink}"
+            
             keyboard.append([
                 InlineKeyboardButton(
                     "Посмотреть в Stixly",
-                    web_app=WebAppInfo(url=f"https://sticker-art-e13nst.amvera.io/miniapp/gallery?set_id={set_id}")
+                    web_app=WebAppInfo(url=miniapp_url)
                 )
             ])
         keyboard.append([
