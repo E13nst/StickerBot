@@ -3,7 +3,7 @@
 """
 import pytest
 import logging
-from unittest.mock import AsyncMock, Mock, patch
+from unittest.mock import AsyncMock, Mock, patch, MagicMock
 import httpx
 from httpx import Response
 
@@ -640,3 +640,142 @@ async def test_full_generation_pipeline_with_bg_removal(real_client):
     print(f"   Final image URL: {final_image_url}")
     print(f"   Final image size: {image_size} bytes")
 
+
+# ==================== Тесты для download_image ====================
+
+@pytest.mark.asyncio
+async def test_download_image_success(client):
+    """Тест успешного скачивания изображения"""
+    # Arrange
+    test_image_url = "https://example.com/test_image.png"
+    test_image_bytes = b"fake_image_data_12345"
+    
+    # Мокаем stream response как async context manager
+    mock_stream = MagicMock()
+    mock_stream.raise_for_status = Mock()
+    mock_stream.headers = {"Content-Length": str(len(test_image_bytes))}
+    
+    # Мокаем aiter_bytes
+    async def mock_aiter():
+        yield test_image_bytes
+    
+    mock_stream.aiter_bytes = Mock(return_value=mock_aiter())
+    
+    # Создаем async context manager для stream
+    mock_context_manager = MagicMock()
+    mock_context_manager.__aenter__ = AsyncMock(return_value=mock_stream)
+    mock_context_manager.__aexit__ = AsyncMock(return_value=None)
+    
+    client._client.stream = Mock(return_value=mock_context_manager)
+    
+    # Act
+    result = await client.download_image(test_image_url)
+    
+    # Assert
+    assert result == test_image_bytes
+    client._client.stream.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_download_image_size_limit(client):
+    """Тест ограничения размера при скачивании"""
+    # Arrange
+    test_image_url = "https://example.com/large_image.png"
+    max_size = 100  # Маленький лимит для теста
+    
+    # Мокаем stream response с большим Content-Length
+    mock_stream = MagicMock()
+    mock_stream.raise_for_status = Mock()
+    mock_stream.headers = {"Content-Length": str(max_size + 1)}
+    
+    # Создаем async context manager для stream
+    mock_context_manager = MagicMock()
+    mock_context_manager.__aenter__ = AsyncMock(return_value=mock_stream)
+    mock_context_manager.__aexit__ = AsyncMock(return_value=None)
+    
+    client._client.stream = Mock(return_value=mock_context_manager)
+    
+    # Act
+    result = await client.download_image(test_image_url, max_size=max_size)
+    
+    # Assert
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_download_image_size_limit_during_download(client):
+    """Тест ограничения размера во время скачивания"""
+    # Arrange
+    test_image_url = "https://example.com/large_image.png"
+    max_size = 10
+    
+    # Мокаем stream response
+    mock_stream = MagicMock()
+    mock_stream.raise_for_status = Mock()
+    mock_stream.headers = {}  # Нет Content-Length
+    
+    # Мокаем aiter_bytes с данными, превышающими лимит
+    async def mock_aiter():
+        yield b"x" * (max_size + 1)
+    
+    mock_stream.aiter_bytes = Mock(return_value=mock_aiter())
+    
+    # Создаем async context manager для stream
+    mock_context_manager = MagicMock()
+    mock_context_manager.__aenter__ = AsyncMock(return_value=mock_stream)
+    mock_context_manager.__aexit__ = AsyncMock(return_value=None)
+    
+    client._client.stream = Mock(return_value=mock_context_manager)
+    
+    # Act
+    result = await client.download_image(test_image_url, max_size=max_size)
+    
+    # Assert
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_download_image_http_error(client):
+    """Тест обработки HTTP ошибки при скачивании"""
+    # Arrange
+    test_image_url = "https://example.com/test_image.png"
+    
+    # Мокаем stream response с ошибкой
+    mock_stream = MagicMock()
+    
+    http_error = httpx.HTTPStatusError(
+        "Not Found",
+        request=Mock(),
+        response=Mock(status_code=404)
+    )
+    mock_stream.raise_for_status = Mock(side_effect=http_error)
+    
+    # Создаем async context manager для stream
+    mock_context_manager = MagicMock()
+    mock_context_manager.__aenter__ = AsyncMock(return_value=mock_stream)
+    mock_context_manager.__aexit__ = AsyncMock(return_value=None)
+    
+    client._client.stream = Mock(return_value=mock_context_manager)
+    
+    # Act
+    result = await client.download_image(test_image_url)
+    
+    # Assert
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_download_image_timeout(client):
+    """Тест обработки таймаута при скачивании"""
+    # Arrange
+    test_image_url = "https://example.com/test_image.png"
+    
+    # Мокаем timeout exception
+    timeout_error = httpx.TimeoutException("Request timed out")
+    client._client.stream = AsyncMock(side_effect=timeout_error)
+    
+    # Act
+    result = await client.download_image(test_image_url)
+    
+    # Assert
+    assert result is None

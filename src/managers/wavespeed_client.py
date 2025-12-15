@@ -294,6 +294,72 @@ class WaveSpeedClient:
         if last_exception:
             raise last_exception
     
+    async def download_image(self, image_url: str, max_size: int = 8 * 1024 * 1024) -> Optional[bytes]:
+        """
+        Скачать изображение с таймаутами и лимитом размера
+        
+        Args:
+            image_url: URL изображения
+            max_size: Максимальный размер в байтах (по умолчанию 8 MB)
+            
+        Returns:
+            Байты изображения или None при ошибке
+        """
+        # Логируем только домен + последний сегмент пути (без полного URL)
+        try:
+            from urllib.parse import urlparse
+            parsed = urlparse(image_url)
+            log_url = f"{parsed.netloc}{parsed.path.split('/')[-1]}" if parsed.path else "image_url"
+        except Exception:
+            log_url = "image_url"
+        
+        # Кастомный таймаут для скачивания
+        download_timeout = httpx.Timeout(connect=5.0, read=15.0, write=5.0, pool=5.0)
+        
+        try:
+            logger.debug(f"WaveSpeed: Downloading image from {log_url}")
+            
+            # Создаем запрос с кастомным таймаутом
+            # Используем stream=True для контроля размера
+            async with self._client.stream('GET', image_url, timeout=download_timeout) as response:
+                response.raise_for_status()
+                
+                # Проверяем Content-Length если доступен
+                content_length = response.headers.get('Content-Length')
+                if content_length:
+                    try:
+                        size = int(content_length)
+                        if size > max_size:
+                            logger.warning(f"WaveSpeed: Image size {size} exceeds max_size {max_size} for {log_url}")
+                            return None
+                    except ValueError:
+                        pass
+                
+                # Читаем ответ по частям, проверяя накопленный размер
+                chunks = []
+                total_size = 0
+                
+                async for chunk in response.aiter_bytes():
+                    total_size += len(chunk)
+                    if total_size > max_size:
+                        logger.warning(f"WaveSpeed: Image download exceeded max_size {max_size} for {log_url}")
+                        return None
+                    chunks.append(chunk)
+                
+                image_bytes = b''.join(chunks)
+                logger.debug(f"WaveSpeed: Successfully downloaded image from {log_url}, size: {len(image_bytes)} bytes")
+                return image_bytes
+                
+        except httpx.HTTPStatusError as e:
+            logger.error(f"WaveSpeed: HTTP error {e.response.status_code} downloading image from {log_url}: {e}")
+            return None
+        except (httpx.RequestError, httpx.TimeoutException) as e:
+            logger.error(f"WaveSpeed: Network error downloading image from {log_url}: {e}")
+            return None
+        except Exception as e:
+            logger.error(f"WaveSpeed: Unexpected error downloading image from {log_url}: {e}", exc_info=True)
+            return None
+    
     async def close(self):
         """Закрыть клиент"""
         await self._client.aclose()
