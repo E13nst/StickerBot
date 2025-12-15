@@ -25,3 +25,27 @@ API_TOKEN = os.getenv('API_TOKEN')
 API_PORT = int(os.getenv('API_PORT', '80'))
 CONFIG_PATH = os.getenv('CONFIG_PATH')
 
+# WaveSpeed API для inline generation
+WAVESPEED_API_KEY = os.getenv('WAVESPEED_API_KEY')
+WAVESPEED_SYSTEM_PROMPT = (
+    "You generate Telegram sticker-style images. "
+    "Output must look like a clean sticker with a transparent-friendly composition, "
+    "clear silhouette, minimal background, high contrast, cute/manga vibe. "
+    "No text unless user explicitly asks. Centered subject, readable at small size."
+)
+WAVESPEED_MAX_POLL_SECONDS = int(os.getenv('WAVESPEED_MAX_POLL_SECONDS', '30'))
+WAVESPEED_INLINE_CACHE_TIME = int(os.getenv('WAVESPEED_INLINE_CACHE_TIME', '5'))
+
+# Quota limits
+FREE_DAILY_LIMIT = int(os.getenv('FREE_DAILY_LIMIT', '20'))
+PREMIUM_DAILY_LIMIT = int(os.getenv('PREMIUM_DAILY_LIMIT', '200'))
+FREE_MAX_PER_10MIN = int(os.getenv('FREE_MAX_PER_10MIN', '6'))
+PREMIUM_MAX_PER_10MIN = int(os.getenv('PREMIUM_MAX_PER_10MIN', '30'))
+COOLDOWN_SECONDS = float(os.getenv('COOLDOWN_SECONDS', '15.0'))
+PREMIUM_USER_IDS = (
+    set(map(int, os.getenv('PREMIUM_USER_IDS', '').split(',')))
+    if os.getenv('PREMIUM_USER_IDS')
+    else set()
+)
+QUOTA_TIMEZONE = os.getenv('QUOTA_TIMEZONE', 'UTC')
+

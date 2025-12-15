@@ -15,6 +15,13 @@ from src.config.settings import (
     WEBHOOK_SECRET_TOKEN,
     WEBHOOK_PATH,
     MINIAPP_GALLERY_URL,
+    WAVESPEED_API_KEY,
+    FREE_DAILY_LIMIT,
+    PREMIUM_DAILY_LIMIT,
+    FREE_MAX_PER_10MIN,
+    PREMIUM_MAX_PER_10MIN,
+    COOLDOWN_SECONDS,
+    PREMIUM_USER_IDS,
 )
 from src.services.sticker_service import StickerService
 from src.services.image_service import ImageService
@@ -60,6 +67,19 @@ from src.bot.handlers.sticker_common import handle_sticker
 from src.bot.handlers.common import cancel, error_handler
 from src.bot.handlers.add_pack_from_sticker import handle_sticker_for_add_pack, handle_add_to_gallery
 from src.bot.handlers.inline import handle_inline_query
+from src.bot.handlers.generation import handle_generate_callback, handle_regenerate_callback
+
+# Импорты для WaveSpeed generation
+from src.managers.wavespeed_client import WaveSpeedClient
+from src.utils.in_memory_limits import PromptStore, RateLimiter
+from src.utils.quota import (
+    UserPlanResolver,
+    DailyQuotaStore,
+    RollingWindowStore,
+    QuotaManager,
+    Plan,
+    QuotaConfig,
+)
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -85,8 +105,67 @@ class StickerBot:
             default_language=GALLERY_DEFAULT_LANGUAGE,
         )
 
+        # Инициализация компонентов для WaveSpeed generation
+        self._init_generation_components()
+
         self.setup_handlers()
         self._shutdown_event = asyncio.Event()
+    
+    def _init_generation_components(self):
+        """Инициализация компонентов для генерации"""
+        # PromptStore
+        self.prompt_store = PromptStore()
+        
+        # RateLimiter
+        self.rate_limiter = RateLimiter()
+        
+        # UserPlanResolver
+        self.user_plan_resolver = UserPlanResolver(PREMIUM_USER_IDS)
+        
+        # DailyQuotaStore
+        self.daily_quota_store = DailyQuotaStore()
+        
+        # RollingWindowStore
+        self.rolling_window_store = RollingWindowStore()
+        
+        # QuotaConfigs
+        configs = {
+            Plan.FREE: QuotaConfig(
+                daily_limit=FREE_DAILY_LIMIT,
+                max_per_10min=FREE_MAX_PER_10MIN,
+                cooldown_seconds=COOLDOWN_SECONDS,
+                max_active=1,
+            ),
+            Plan.PREMIUM: QuotaConfig(
+                daily_limit=PREMIUM_DAILY_LIMIT,
+                max_per_10min=PREMIUM_MAX_PER_10MIN,
+                cooldown_seconds=COOLDOWN_SECONDS,
+                max_active=1,
+            ),
+        }
+        
+        # QuotaManager
+        self.quota_manager = QuotaManager(
+            rate_limiter=self.rate_limiter,
+            daily_store=self.daily_quota_store,
+            rolling_store=self.rolling_window_store,
+            resolver=self.user_plan_resolver,
+            configs=configs,
+        )
+        
+        # WaveSpeedClient (если API key есть)
+        self.wavespeed_client = None
+        if WAVESPEED_API_KEY:
+            try:
+                self.wavespeed_client = WaveSpeedClient(WAVESPEED_API_KEY)
+                logger.info("WaveSpeed generation enabled")
+            except Exception as e:
+                logger.error(f"Failed to initialize WaveSpeedClient: {e}")
+        
+        # Сохраняем в bot_data для доступа из handlers
+        self.application.bot_data["prompt_store"] = self.prompt_store
+        self.application.bot_data["quota_manager"] = self.quota_manager
+        self.application.bot_data["wavespeed_client"] = self.wavespeed_client
 
     @staticmethod
     def _validate_configuration():
@@ -329,6 +408,20 @@ class StickerBot:
         # InlineQueryHandler вне ConversationHandler, на уровне application
         self.application.add_handler(InlineQueryHandler(wrapped_handle_inline_query))
         
+        # Handlers для генерации (вне ConversationHandler)
+        if self.wavespeed_client:
+            gen_handler = CallbackQueryHandler(
+                handle_generate_callback,
+                pattern='^gen:'
+            )
+            self.application.add_handler(gen_handler)
+            
+            regen_handler = CallbackQueryHandler(
+                handle_regenerate_callback,
+                pattern='^regen:'
+            )
+            self.application.add_handler(regen_handler)
+        
         self.application.add_error_handler(error_handler)
 
     async def run_polling(self):
@@ -465,6 +558,13 @@ class StickerBot:
     async def _shutdown(self):
         """Внутренний метод для завершения работы бота"""
         try:
+            # Закрываем WaveSpeedClient если есть
+            if self.wavespeed_client:
+                try:
+                    await self.wavespeed_client.close()
+                except Exception as e:
+                    logger.warning(f"Error closing WaveSpeedClient: {e}")
+            
             if self.application.updater.running:
                 await self.application.updater.stop()
             await self.application.stop()
