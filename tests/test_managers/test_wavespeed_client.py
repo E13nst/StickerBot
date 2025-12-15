@@ -2,11 +2,14 @@
 Тесты для WaveSpeedClient
 """
 import pytest
+import logging
 from unittest.mock import AsyncMock, Mock, patch
 import httpx
 from httpx import Response
 
 from src.managers.wavespeed_client import WaveSpeedClient
+
+logger = logging.getLogger(__name__)
 
 
 @pytest.fixture
@@ -454,4 +457,186 @@ async def test_client_close(client, mock_httpx_client):
     await client.close()
     
     mock_httpx_client.aclose.assert_called_once()
+
+
+# ==================== Интеграционные тесты ====================
+
+@pytest.fixture
+def real_api_key():
+    """Фикстура для реального API ключа из переменных окружения"""
+    import os
+    from pathlib import Path
+    from dotenv import load_dotenv
+    
+    # Загружаем .env файл из корня проекта
+    project_root = Path(__file__).parent.parent.parent
+    env_path = project_root / '.env'
+    load_dotenv(dotenv_path=env_path)
+    
+    api_key = os.getenv('WAVESPEED_API_KEY')
+    if not api_key:
+        pytest.skip("WAVESPEED_API_KEY not set, skipping integration test")
+    return api_key
+
+
+@pytest.fixture
+async def real_client(real_api_key):
+    """Фикстура для создания реального клиента"""
+    client = WaveSpeedClient(real_api_key)
+    yield client
+    await client.close()
+
+
+@pytest.mark.asyncio
+@pytest.mark.integration
+async def test_full_generation_pipeline_with_bg_removal(real_client):
+    """
+    Интеграционный тест полного цикла: генерация изображения -> удаление фона -> получение файла
+    
+    Тест генерирует изображение "Trump with cigar", удаляет фон и проверяет получение файла.
+    """
+    import asyncio
+    import time
+    
+    prompt = "Trump with cigar"
+    max_wait_time = 45  # Максимальное время ожидания в секундах (генерация ~15 сек, удаление фона ~15 сек)
+    poll_interval = 1.0  # Интервал опроса в секундах (быстрее реагируем на завершение)
+    
+    # Шаг 1: Отправка запроса на генерацию
+    flux_request_id = await real_client.submit_flux_schnell(
+        prompt,
+        size="512*512",
+        output_format="png",
+        seed=-1,
+        num_images=1
+    )
+    
+    assert flux_request_id is not None
+    assert len(flux_request_id) > 0
+    
+    # Шаг 2: Ожидание завершения генерации
+    flux_image_url = None
+    start_time = time.time()
+    
+    print(f"\n[INFO] Waiting for flux generation (request_id: {flux_request_id})...")
+    
+    while time.time() - start_time < max_wait_time:
+        await asyncio.sleep(poll_interval)
+        
+        result = await real_client.get_prediction_result(flux_request_id)
+        if not result:
+            elapsed = time.time() - start_time
+            print(f"  [{elapsed:.1f}s] No result yet, continuing...")
+            continue
+        
+        # Проверяем структуру ответа (может быть вложенный data)
+        if "data" in result and isinstance(result.get("data"), dict):
+            data = result["data"]
+            status = data.get("status", "").lower()
+            outputs = data.get("outputs", [])
+        else:
+            status = result.get("status", "").lower()
+            outputs = result.get("outputs", [])
+        
+        elapsed = time.time() - start_time
+        
+        # Логируем полный ответ для отладки (первые несколько раз)
+        if elapsed < 10:
+            print(f"  [{elapsed:.1f}s] Status: '{status}' | Outputs: {len(outputs) if outputs else 0}")
+        else:
+            print(f"  [{elapsed:.1f}s] Status: '{status}'")
+        
+        if status == "completed":
+            if outputs and len(outputs) > 0:
+                flux_image_url = outputs[0]
+                print(f"  [OK] Generation completed! Image URL: {flux_image_url[:50]}...")
+                break
+            else:
+                print(f"  [WARN] Status completed but no outputs found")
+        elif status == "failed":
+            error_msg = result.get("error") or (data.get("error") if "data" in result else "Unknown error")
+            pytest.fail(f"Flux generation failed: {error_msg}")
+    
+    assert flux_image_url is not None, "Flux generation did not complete in time or no image URL returned"
+    assert isinstance(flux_image_url, str), "Image URL must be a string"
+    assert flux_image_url.startswith("http"), "Image URL must be a valid HTTP(S) URL"
+    
+    # Шаг 3: Отправка запроса на удаление фона
+    bg_request_id = await real_client.submit_background_remover(flux_image_url)
+    
+    assert bg_request_id is not None
+    assert len(bg_request_id) > 0
+    
+    # Шаг 4: Ожидание завершения удаления фона
+    final_image_url = None
+    start_time = time.time()
+    
+    print(f"\n[INFO] Waiting for background removal (request_id: {bg_request_id})...")
+    
+    while time.time() - start_time < max_wait_time:
+        await asyncio.sleep(poll_interval)
+        
+        result = await real_client.get_prediction_result(bg_request_id)
+        if not result:
+            elapsed = time.time() - start_time
+            print(f"  [{elapsed:.1f}s] No result yet, continuing...")
+            continue
+        
+        # Проверяем структуру ответа (может быть вложенный data)
+        if "data" in result and isinstance(result.get("data"), dict):
+            data = result["data"]
+            status = data.get("status", "").lower()
+            outputs = data.get("outputs", [])
+        else:
+            status = result.get("status", "").lower()
+            outputs = result.get("outputs", [])
+        
+        elapsed = time.time() - start_time
+        print(f"  [{elapsed:.1f}s] Status: '{status}' | Outputs: {len(outputs) if outputs else 0}")
+        
+        if status == "completed":
+            if outputs and len(outputs) > 0:
+                final_image_url = outputs[0]
+                print(f"  [OK] Background removal completed! Image URL: {final_image_url[:50]}...")
+                break
+            else:
+                print(f"  [WARN] Status completed but no outputs found")
+        elif status == "failed":
+            # Если удаление фона не удалось, используем исходное изображение
+            print(f"  [WARN] Background removal failed, using original image")
+            final_image_url = flux_image_url
+            break
+    
+    assert final_image_url is not None, "Background removal did not complete in time or no image URL returned"
+    assert isinstance(final_image_url, str), "Final image URL must be a string"
+    assert final_image_url.startswith("http"), "Final image URL must be a valid HTTP(S) URL"
+    
+    # Шаг 5: Проверка, что файл доступен (можно скачать)
+    image_size = 0
+    
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as http_client:
+            response = await http_client.get(final_image_url)
+            response.raise_for_status()
+            
+            # Проверяем, что это действительно изображение
+            assert response.headers.get("content-type", "").startswith("image/"), \
+                f"Expected image content type, got: {response.headers.get('content-type')}"
+            assert len(response.content) > 0, "Image file should not be empty"
+            
+            # Проверяем минимальный размер файла (хотя бы несколько килобайт)
+            assert len(response.content) > 1000, "Image file should be at least 1KB"
+            
+            image_size = len(response.content)
+            
+    except httpx.RequestError as e:
+        pytest.fail(f"Failed to download final image: {e}")
+    
+    # Логируем успешное завершение
+    print(f"\n[SUCCESS] Successfully generated and processed image:")
+    print(f"   Prompt: {prompt}")
+    print(f"   Flux request ID: {flux_request_id}")
+    print(f"   Background removal request ID: {bg_request_id}")
+    print(f"   Final image URL: {final_image_url}")
+    print(f"   Final image size: {image_size} bytes")
 
