@@ -44,3 +44,7 @@ PREMIUM_USER_IDS = (
 )
 QUOTA_TIMEZONE = os.getenv('QUOTA_TIMEZONE', 'UTC')
 
+# Placeholder sticker для inline query
+PLACEHOLDER_STICKER_FILE_ID = os.getenv('PLACEHOLDER_STICKER_FILE_ID')
+PLACEHOLDER_STICKER_PATH = os.getenv('PLACEHOLDER_STICKER_PATH', 'test_output/trump_cigar.webp')
+

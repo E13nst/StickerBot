@@ -1,6 +1,6 @@
 import logging
 import hashlib
-from typing import List, Optional
+from typing import List, Optional, Union
 from telegram import Update, InlineQueryResultCachedSticker, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 
@@ -50,11 +50,12 @@ def _get_stable_gen_id(raw_query: str, variant: str = "default") -> str:
 def build_generate_result(
     raw_query: str,
     prompt_store,
-    generation_enabled: bool
-) -> Optional[InlineQueryResultArticle]:
+    generation_enabled: bool,
+    placeholder_file_id: Optional[str] = None
+) -> Optional[Union[InlineQueryResultArticle, InlineQueryResultCachedSticker]]:
     """
     Строит результат генерации для inline query.
-    НЕ отправляет ответ в Telegram, только возвращает InlineQueryResultArticle.
+    НЕ отправляет ответ в Telegram, только возвращает InlineQueryResultArticle или InlineQueryResultCachedSticker.
     """
     # Вариант A: генерация выключена
     if not generation_enabled:
@@ -104,13 +105,22 @@ def build_generate_result(
         )
     ]])
     
-    return InlineQueryResultArticle(
-        id=_get_stable_gen_id(raw_query, "valid"),
-        title="Generate sticker (STIXLY)",
-        description=description,
-        input_message_content=InputTextMessageContent(message_text),
-        reply_markup=keyboard,
-    )
+    # Если есть placeholder_file_id, используем InlineQueryResultCachedSticker
+    if placeholder_file_id:
+        return InlineQueryResultCachedSticker(
+            id=_get_stable_gen_id(raw_query, "valid"),
+            sticker_file_id=placeholder_file_id,
+            reply_markup=keyboard,
+        )
+    else:
+        # Fallback на старый вариант (текст)
+        return InlineQueryResultArticle(
+            id=_get_stable_gen_id(raw_query, "valid"),
+            title="Generate sticker (STIXLY)",
+            description=description,
+            input_message_content=InputTextMessageContent(message_text),
+            reply_markup=keyboard,
+        )
 
 
 async def build_search_results(
@@ -198,8 +208,16 @@ async def handle_inline_query(
     
     generation_enabled = bool(WAVESPEED_API_KEY and wavespeed_client and prompt_store)
     
-    # Строим результат генерации
-    gen_result = build_generate_result(raw_query, prompt_store, generation_enabled)
+    # Получаем placeholder_file_id из bot_data
+    placeholder_file_id = context.bot_data.get("placeholder_sticker_file_id")
+    
+    # Строим результат генерации с placeholder_file_id
+    gen_result = build_generate_result(
+        raw_query, 
+        prompt_store, 
+        generation_enabled,
+        placeholder_file_id=placeholder_file_id
+    )
     
     # Парсинг offset
     offset_str = inline_query.offset or "0"

@@ -45,6 +45,9 @@ from src.config.settings import (
     PREMIUM_MAX_PER_10MIN,
     COOLDOWN_SECONDS,
     PREMIUM_USER_IDS,
+    PLACEHOLDER_STICKER_FILE_ID,
+    PLACEHOLDER_STICKER_PATH,
+    ADMIN_IDS,
 )
 from src.services.sticker_service import StickerService
 from src.services.image_service import ImageService
@@ -239,6 +242,7 @@ class StickerBot:
         self.application.bot_data["prompt_store"] = self.prompt_store
         self.application.bot_data["quota_manager"] = self.quota_manager
         self.application.bot_data["wavespeed_client"] = self.wavespeed_client
+        # placeholder_sticker_file_id будет загружен при старте бота
 
     @staticmethod
     def _validate_configuration():
@@ -515,6 +519,73 @@ class StickerBot:
         
         self.application.add_error_handler(error_handler)
 
+    async def _load_placeholder_sticker(self):
+        """Загрузить placeholder стикер и сохранить file_id"""
+        from pathlib import Path
+        from telegram import InputFile
+        
+        if PLACEHOLDER_STICKER_FILE_ID:
+            # Используем существующий file_id
+            self.application.bot_data["placeholder_sticker_file_id"] = PLACEHOLDER_STICKER_FILE_ID
+            logger.info("Using existing placeholder sticker file_id from config")
+            return
+        
+        # Загружаем файл в Telegram
+        sticker_path = Path(PLACEHOLDER_STICKER_PATH)
+        if not sticker_path.exists():
+            logger.warning(f"Placeholder sticker file not found: {sticker_path}")
+            self.application.bot_data["placeholder_sticker_file_id"] = None
+            return
+        
+        try:
+            # Читаем файл
+            with open(sticker_path, 'rb') as f:
+                sticker_bytes = f.read()
+            
+            # Для загрузки стикера нужен стикерсет и user_id
+            # Используем первого админа, если есть
+            if not ADMIN_IDS:
+                logger.warning("No admin IDs configured, cannot load placeholder sticker. Set PLACEHOLDER_STICKER_FILE_ID manually.")
+                self.application.bot_data["placeholder_sticker_file_id"] = None
+                return
+            
+            user_id = ADMIN_IDS[0]
+            
+            # Создаем временный стикерсет для placeholder
+            # Имя стикерсета должно быть уникальным, используем timestamp
+            import time
+            sticker_set_name = f"stixly_placeholder_{int(time.time())}_by_{self.application.bot.username}"
+            
+            # Создаем стикерсет с placeholder стикером
+            sticker_file = InputFile(sticker_bytes, filename="placeholder.webp")
+            try:
+                await self.application.bot.create_new_sticker_set(
+                    user_id=user_id,
+                    name=sticker_set_name,
+                    title="STIXLY Placeholder",
+                    sticker=sticker_file,
+                    emoji="⏳"
+                )
+                
+                # Получаем file_id из стикерсета
+                sticker_set = await self.application.bot.get_sticker_set(sticker_set_name)
+                if sticker_set.stickers:
+                    file_id = sticker_set.stickers[0].file_id
+                    self.application.bot_data["placeholder_sticker_file_id"] = file_id
+                    logger.info(f"Placeholder sticker loaded, file_id: {file_id}")
+                else:
+                    logger.error("Placeholder sticker set created but no stickers found")
+                    self.application.bot_data["placeholder_sticker_file_id"] = None
+            except Exception as create_error:
+                logger.error(f"Failed to create placeholder sticker set: {create_error}")
+                # Пробуем добавить в существующий стикерсет, если есть
+                # Но для этого нужно знать имя существующего стикерсета
+                # Пока просто логируем ошибку
+                self.application.bot_data["placeholder_sticker_file_id"] = None
+        except Exception as e:
+            logger.error(f"Failed to load placeholder sticker: {e}", exc_info=True)
+            self.application.bot_data["placeholder_sticker_file_id"] = None
+
     async def run_polling(self):
         """Запуск бота в режиме polling"""
         logger.info("Запуск бота в режиме polling")
@@ -522,6 +593,9 @@ class StickerBot:
             # Инициализация и запуск
             await self.application.initialize()
             await self.application.start()
+            
+            # Загружаем placeholder стикер
+            await self._load_placeholder_sticker()
             
             # Удаляем webhook перед запуском polling
             logger.info("Удаление webhook перед запуском polling...")
@@ -553,6 +627,9 @@ class StickerBot:
             # Инициализация
             await self.application.initialize()
             await self.application.start()
+            
+            # Загружаем placeholder стикер
+            await self._load_placeholder_sticker()
             
             # Устанавливаем экземпляр бота в webhook endpoint после инициализации
             # чтобы гарантировать, что application полностью готов
