@@ -210,32 +210,51 @@ async def run_generation_and_update_message(
     
     try:
         # Stage 1: Flux-schnell генерация
+        logger.info(f"Generation: Starting flux-schnell generation for user {user_id}, prompt_hash={prompt_hash[:8]}...")
         flux_request_id = await wavespeed_client.submit_flux_schnell(
             final_prompt, seed=seed, output_format="png"
         )
+        logger.info(f"Generation: Flux request submitted: request_id={flux_request_id}")
         
         # Polling flux result
         flux_image_url = None
+        poll_count = 0
+        start_poll_time = time.time()
+        
         while time.time() < overall_deadline:
+            poll_count += 1
+            elapsed = time.time() - start_poll_time
             await asyncio.sleep(poll_interval_base + random.uniform(-0.3, 0.3))
             
+            logger.debug(f"Generation: Polling flux result #{poll_count} (elapsed: {elapsed:.1f}s, request_id={flux_request_id})")
             result = await wavespeed_client.get_prediction_result(flux_request_id)
+            
             if not result:
+                logger.debug(f"Generation: No result yet for {flux_request_id}, continuing...")
                 continue
             
-            status = result.get("status", "").lower()
+            # Проверяем структуру ответа (может быть вложенный data)
+            if "data" in result and isinstance(result.get("data"), dict):
+                data = result["data"]
+                status = data.get("status", "").lower()
+                outputs = data.get("outputs", [])
+            else:
+                status = result.get("status", "").lower()
+                outputs = result.get("outputs", [])
+            
+            logger.debug(f"Generation: Flux status: '{status}', outputs: {len(outputs) if outputs else 0}")
             
             if status == "completed":
-                outputs = result.get("outputs", [])
                 if not outputs:
-                    logger.error(f"No outputs in flux result: {result}")
+                    logger.error(f"Generation: Status completed but no outputs in result. Full result: {result}")
                     break
                 flux_image_url = outputs[0]
+                logger.info(f"Generation: Flux generation completed! Image URL: {flux_image_url[:80]}...")
                 break
                 
             elif status == "failed":
-                error_msg = result.get("error", "Unknown error")
-                logger.error(f"WaveSpeed flux generation failed: {error_msg}")
+                error_msg = result.get("error") or (data.get("error") if "data" in result else "Unknown error")
+                logger.error(f"Generation: WaveSpeed flux generation failed for {flux_request_id}: {error_msg}")
                 await update_message_with_error(
                     query=query,
                     context=context,
@@ -245,7 +264,8 @@ async def run_generation_and_update_message(
                 return
         
         if not flux_image_url:
-            logger.warning(f"WaveSpeed flux generation timeout or failed")
+            elapsed_total = time.time() - start_poll_time
+            logger.warning(f"Generation: Flux generation timeout or failed after {elapsed_total:.1f}s, {poll_count} polls, request_id={flux_request_id}")
             await update_message_with_error(
                 query=query,
                 context=context,
@@ -259,6 +279,7 @@ async def run_generation_and_update_message(
         bg_removal_success = False
         
         if WAVESPEED_BG_REMOVE_ENABLED:
+            logger.info(f"Generation: Starting background removal for image: {flux_image_url[:80]}...")
             # Обновляем статус (опционально, максимум 1 дополнительный edit)
             try:
                 status_text = "🧼 Removing background…"
@@ -274,35 +295,58 @@ async def run_generation_and_update_message(
             
             try:
                 bg_request_id = await wavespeed_client.submit_background_remover(flux_image_url)
+                logger.info(f"Generation: Background removal request submitted: request_id={bg_request_id}")
                 
                 # Polling bg-remover result (в рамках оставшегося времени)
+                bg_poll_count = 0
+                bg_start_time = time.time()
+                
                 while time.time() < overall_deadline:
+                    bg_poll_count += 1
+                    bg_elapsed = time.time() - bg_start_time
                     await asyncio.sleep(poll_interval_base + random.uniform(-0.3, 0.3))
                     
+                    logger.debug(f"Generation: Polling bg-remover result #{bg_poll_count} (elapsed: {bg_elapsed:.1f}s, request_id={bg_request_id})")
                     result = await wavespeed_client.get_prediction_result(bg_request_id)
+                    
                     if not result:
+                        logger.debug(f"Generation: No bg-remover result yet for {bg_request_id}, continuing...")
                         continue
                     
-                    status = result.get("status", "").lower()
+                    # Проверяем структуру ответа (может быть вложенный data)
+                    if "data" in result and isinstance(result.get("data"), dict):
+                        data = result["data"]
+                        status = data.get("status", "").lower()
+                        outputs = data.get("outputs", [])
+                    else:
+                        status = result.get("status", "").lower()
+                        outputs = result.get("outputs", [])
+                    
+                    logger.debug(f"Generation: Bg-remover status: '{status}', outputs: {len(outputs) if outputs else 0}")
                     
                     if status == "completed":
-                        outputs = result.get("outputs", [])
                         if outputs:
                             final_image_url = outputs[0]  # PNG с прозрачностью
                             bg_removal_success = True
+                            logger.info(f"Generation: Background removal completed! Final URL: {final_image_url[:80]}...")
                             break
+                        else:
+                            logger.warning(f"Generation: Bg-remover completed but no outputs found")
                     
                     elif status == "failed":
-                        logger.warning(f"Background removal failed, using flux result as fallback")
+                        error_msg = result.get("error") or (data.get("error") if "data" in result else "Unknown error")
+                        logger.warning(f"Generation: Background removal failed for {bg_request_id}: {error_msg}, using flux result as fallback")
                         break
                 
                 if not bg_removal_success:
-                    logger.info(f"Background removal timeout or failed, using flux result as fallback")
+                    bg_elapsed_total = time.time() - bg_start_time
+                    logger.info(f"Generation: Background removal timeout or failed after {bg_elapsed_total:.1f}s, {bg_poll_count} polls, using flux result as fallback")
                     
             except Exception as e:
-                logger.warning(f"Background removal error, using flux result as fallback: {e}")
+                logger.warning(f"Generation: Background removal error for {flux_image_url[:80]}..., using flux result as fallback: {e}", exc_info=True)
         
         # Обновляем сообщение с финальным изображением
+        logger.info(f"Generation: Updating message with final image: {final_image_url[:80]}...")
         caption = "✅ Generated by STIXLY"
         if WAVESPEED_BG_REMOVE_ENABLED and not bg_removal_success:
             caption = "✅ Generated by STIXLY (bg removal failed)"
@@ -314,6 +358,7 @@ async def run_generation_and_update_message(
             prompt_hash=prompt_hash,
             caption=caption,
         )
+        logger.info(f"Generation: Successfully completed for user {user_id}, prompt_hash={prompt_hash[:8]}...")
         
     except Exception as e:
         logger.exception(f"Error in generation task for user {user_id}: {e}")

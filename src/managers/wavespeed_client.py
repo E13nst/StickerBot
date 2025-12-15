@@ -80,24 +80,37 @@ class WaveSpeedClient:
         }
         
         # Ретраи на сетевые ошибки/5xx/429
+        logger.info(f"WaveSpeed: Submitting flux-schnell request to {url}")
+        logger.debug(f"WaveSpeed: Payload: prompt_length={len(final_prompt)}, size={size}, output_format={output_format}, seed={seed}, num_images={num_images}")
+        
         last_exception = None
         for attempt in range(MAX_RETRIES + 1):
             try:
+                if attempt > 0:
+                    logger.info(f"WaveSpeed: Retry attempt {attempt + 1}/{MAX_RETRIES + 1} for flux-schnell")
+                
                 response = await self._client.post(url, json=payload, timeout=SUBMIT_TIMEOUT)
+                logger.debug(f"WaveSpeed: Response status: {response.status_code}")
+                
                 response.raise_for_status()
                 
                 data = response.json()
+                logger.debug(f"WaveSpeed: Response data keys: {list(data.keys())}")
+                
                 # Поддержка нового формата с вложенным data
                 if "data" in data and isinstance(data.get("data"), dict):
                     request_id = data["data"].get("id") or data["data"].get("requestId")
+                    logger.debug(f"WaveSpeed: Extracted request_id from data.data: {request_id}")
                 else:
                     # Fallback на старый формат для обратной совместимости
                     request_id = data.get("id") or data.get("requestId")
+                    logger.debug(f"WaveSpeed: Extracted request_id from root: {request_id}")
                 
                 if not request_id:
+                    logger.error(f"WaveSpeed: Invalid response structure - no id found. Full response: {data}")
                     raise ValueError(f"Invalid response from WaveSpeed API: {data}")
                 
-                logger.info(f"WaveSpeed task submitted: request_id={request_id}")
+                logger.info(f"WaveSpeed: Flux-schnell task submitted successfully: request_id={request_id}")
                 return request_id
                 
             except httpx.HTTPStatusError as e:
@@ -139,19 +152,45 @@ class WaveSpeedClient:
         """
         url = f"{WAVESPEED_BASE_URL}/predictions/{request_id}/result"
         
+        logger.debug(f"WaveSpeed: Getting prediction result from {url}")
+        
         try:
             response = await self._client.get(url, timeout=GET_RESULT_TIMEOUT)
+            logger.debug(f"WaveSpeed: GET {url} -> Status: {response.status_code}")
+            
             response.raise_for_status()
             
             data = response.json()
+            logger.debug(f"WaveSpeed: Response data keys: {list(data.keys())}")
             
-            # Логируем только статус и executionTime (без полного ответа)
-            status = data.get("status", "unknown")
-            execution_time = data.get("executionTime")
-            logger.debug(
-                f"WaveSpeed result: request_id={request_id}, "
-                f"status={status}, executionTime={execution_time}"
-            )
+            # Проверяем структуру ответа (может быть вложенный data)
+            if "data" in data and isinstance(data.get("data"), dict):
+                inner_data = data["data"]
+                status = inner_data.get("status", "unknown")
+                execution_time = inner_data.get("executionTime")
+                outputs = inner_data.get("outputs", [])
+                logger.info(
+                    f"WaveSpeed: Result for {request_id}: status={status}, "
+                    f"executionTime={execution_time}, outputs_count={len(outputs) if outputs else 0}"
+                )
+                if status == "completed" and outputs:
+                    logger.info(f"WaveSpeed: Completed! First output URL: {outputs[0][:80]}...")
+                elif status == "failed":
+                    error_msg = inner_data.get("error", "Unknown error")
+                    logger.warning(f"WaveSpeed: Generation failed for {request_id}: {error_msg}")
+            else:
+                status = data.get("status", "unknown")
+                execution_time = data.get("executionTime")
+                outputs = data.get("outputs", [])
+                logger.info(
+                    f"WaveSpeed: Result for {request_id}: status={status}, "
+                    f"executionTime={execution_time}, outputs_count={len(outputs) if outputs else 0}"
+                )
+                if status == "completed" and outputs:
+                    logger.info(f"WaveSpeed: Completed! First output URL: {outputs[0][:80]}...")
+                elif status == "failed":
+                    error_msg = data.get("error", "Unknown error")
+                    logger.warning(f"WaveSpeed: Generation failed for {request_id}: {error_msg}")
             
             return data
             
@@ -195,24 +234,37 @@ class WaveSpeedClient:
             log_url = "image_url"
         
         # Ретраи на сетевые ошибки/5xx/429
+        logger.info(f"WaveSpeed: Submitting background-remover request to {url}")
+        logger.debug(f"WaveSpeed: Image URL: {log_url}")
+        
         last_exception = None
         for attempt in range(MAX_RETRIES + 1):
             try:
+                if attempt > 0:
+                    logger.info(f"WaveSpeed: Retry attempt {attempt + 1}/{MAX_RETRIES + 1} for bg-remover")
+                
                 response = await self._client.post(url, json=payload, timeout=SUBMIT_TIMEOUT)
+                logger.debug(f"WaveSpeed: Response status: {response.status_code}")
+                
                 response.raise_for_status()
                 
                 data = response.json()
+                logger.debug(f"WaveSpeed: Response data keys: {list(data.keys())}")
+                
                 # Поддержка нового формата с вложенным data
                 if "data" in data and isinstance(data.get("data"), dict):
                     request_id = data["data"].get("id") or data["data"].get("requestId")
+                    logger.debug(f"WaveSpeed: Extracted request_id from data.data: {request_id}")
                 else:
                     # Fallback на старый формат для обратной совместимости
                     request_id = data.get("id") or data.get("requestId")
+                    logger.debug(f"WaveSpeed: Extracted request_id from root: {request_id}")
                 
                 if not request_id:
+                    logger.error(f"WaveSpeed: Invalid response structure - no id found. Full response: {data}")
                     raise ValueError(f"Invalid response from WaveSpeed API: {data}")
                 
-                logger.info(f"WaveSpeed bg-remover task submitted: request_id={request_id}, image={log_url}")
+                logger.info(f"WaveSpeed: Background-remover task submitted successfully: request_id={request_id}, image={log_url}")
                 return request_id
                 
             except httpx.HTTPStatusError as e:
