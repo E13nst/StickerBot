@@ -210,6 +210,10 @@ async def handle_inline_query(
     
     # Получаем placeholder_file_id из bot_data
     placeholder_file_id = context.bot_data.get("placeholder_sticker_file_id")
+    if placeholder_file_id:
+        logger.debug(f"Placeholder file_id from bot_data: {placeholder_file_id[:20]}...")
+    else:
+        logger.warning("Placeholder file_id not found in bot_data - will use text fallback")
     
     # Строим результат генерации с placeholder_file_id
     gen_result = build_generate_result(
@@ -218,6 +222,15 @@ async def handle_inline_query(
         generation_enabled,
         placeholder_file_id=placeholder_file_id
     )
+    
+    # Логируем тип результата для диагностики
+    if gen_result:
+        result_type = type(gen_result).__name__
+        logger.debug(f"Generated result type: {result_type}")
+        if isinstance(gen_result, InlineQueryResultCachedSticker):
+            logger.info("Using InlineQueryResultCachedSticker for generation result")
+        elif isinstance(gen_result, InlineQueryResultArticle):
+            logger.warning("Falling back to InlineQueryResultArticle - placeholder sticker not available")
     
     # Парсинг offset
     offset_str = inline_query.offset or "0"
