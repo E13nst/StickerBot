@@ -1,11 +1,33 @@
 import os
 import yaml
 import threading
+import json
 from pathlib import Path
 from typing import Optional, Dict, Any
+from datetime import datetime
 import logging
 
 logger = logging.getLogger(__name__)
+
+# #region agent log
+DEBUG_LOG_PATH = Path(__file__).parent.parent.parent / '.cursor' / 'debug.log'
+def _debug_log(location, message, data=None, hypothesis_id=None):
+    try:
+        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "timestamp": int(datetime.now().timestamp() * 1000),
+            "location": location,
+            "message": message,
+            "data": data or {},
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": hypothesis_id
+        }
+        with open(DEBUG_LOG_PATH, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+    except Exception:
+        pass
+# #endregion
 
 
 class ConfigManager:
@@ -26,37 +48,82 @@ class ConfigManager:
             config_path: Путь к конфиг файлу. Если не указан, определяется автоматически:
                         /data/bot_config.yaml на хостинге, ./data/bot_config.yaml локально
         """
-        if config_path:
-            self.config_path = Path(config_path)
-        else:
-            # Автоматическое определение пути
-            if os.path.exists('/data'):
-                self.config_path = Path('/data/bot_config.yaml')
+        # #region agent log
+        _debug_log("config/manager.py:__init__:entry", "Начало __init__ ConfigManager", {"config_path": config_path}, "G")
+        # #endregion
+        try:
+            if config_path:
+                self.config_path = Path(config_path)
             else:
-                self.config_path = Path('./data/bot_config.yaml')
-        
-        # Создаем директорию, если её нет
-        self.config_path.parent.mkdir(parents=True, exist_ok=True)
-        
-        # Инициализируем конфиг, если файла нет
-        if not self.config_path.exists():
-            self._write_config(self._default_config.copy())
+                # Автоматическое определение пути
+                # #region agent log
+                _debug_log("config/manager.py:__init__:check_data", "Проверка /data", {"exists": os.path.exists('/data')}, "G")
+                # #endregion
+                if os.path.exists('/data'):
+                    self.config_path = Path('/data/bot_config.yaml')
+                else:
+                    self.config_path = Path('./data/bot_config.yaml')
+            # #region agent log
+            _debug_log("config/manager.py:__init__:path_determined", "Путь определен", {"config_path": str(self.config_path)}, "G")
+            # #endregion
+            
+            # Создаем директорию, если её нет
+            self.config_path.parent.mkdir(parents=True, exist_ok=True)
+            # #region agent log
+            _debug_log("config/manager.py:__init__:dir_created", "Директория создана/проверена", {"exists": self.config_path.exists()}, "G")
+            # #endregion
+            
+            # Инициализируем конфиг, если файла нет
+            if not self.config_path.exists():
+                # #region agent log
+                _debug_log("config/manager.py:__init__:creating_default", "Создание дефолтного конфига", {}, "G")
+                # #endregion
+                self._write_config(self._default_config.copy())
+                # #region agent log
+                _debug_log("config/manager.py:__init__:default_created", "Дефолтный конфиг создан", {}, "G")
+                # #endregion
+            # #region agent log
+            _debug_log("config/manager.py:__init__:success", "ConfigManager инициализирован", {"final_path": str(self.config_path)}, "G")
+            # #endregion
+        except Exception as e:
+            # #region agent log
+            _debug_log("config/manager.py:__init__:error", "Ошибка в __init__", {"error": str(e), "type": type(e).__name__}, "G")
+            # #endregion
+            raise
     
     def _read_config(self) -> Dict[str, Any]:
         """Чтение конфига из файла (thread-safe)"""
+        # #region agent log
+        _debug_log("config/manager.py:_read_config:entry", "Начало чтения конфига", {"path": str(self.config_path)}, "H")
+        # #endregion
         with self._lock:
             try:
                 if not self.config_path.exists():
+                    # #region agent log
+                    _debug_log("config/manager.py:_read_config:not_exists", "Файл конфига не существует, возврат дефолта", {}, "H")
+                    # #endregion
                     return self._default_config.copy()
                 
+                # #region agent log
+                _debug_log("config/manager.py:_read_config:before_open", "Перед открытием файла", {}, "H")
+                # #endregion
                 with open(self.config_path, 'r', encoding='utf-8') as f:
                     config = yaml.safe_load(f) or {}
+                # #region agent log
+                _debug_log("config/manager.py:_read_config:after_load", "Конфиг загружен из YAML", {"config": config}, "H")
+                # #endregion
                 
                 # Объединяем с дефолтными значениями
                 result = self._default_config.copy()
                 result.update(config)
+                # #region agent log
+                _debug_log("config/manager.py:_read_config:success", "Конфиг прочитан успешно", {"result": result}, "H")
+                # #endregion
                 return result
             except Exception as e:
+                # #region agent log
+                _debug_log("config/manager.py:_read_config:error", "Ошибка чтения конфига", {"error": str(e), "type": type(e).__name__}, "H")
+                # #endregion
                 logger.error(f"Ошибка чтения конфига: {e}")
                 return self._default_config.copy()
     

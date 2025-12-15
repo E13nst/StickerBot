@@ -87,7 +87,12 @@ class WaveSpeedClient:
                 response.raise_for_status()
                 
                 data = response.json()
-                request_id = data.get("id") or data.get("requestId")
+                # Поддержка нового формата с вложенным data
+                if "data" in data and isinstance(data.get("data"), dict):
+                    request_id = data["data"].get("id") or data["data"].get("requestId")
+                else:
+                    # Fallback на старый формат для обратной совместимости
+                    request_id = data.get("id") or data.get("requestId")
                 
                 if not request_id:
                     raise ValueError(f"Invalid response from WaveSpeed API: {data}")
@@ -197,7 +202,12 @@ class WaveSpeedClient:
                 response.raise_for_status()
                 
                 data = response.json()
-                request_id = data.get("id") or data.get("requestId")
+                # Поддержка нового формата с вложенным data
+                if "data" in data and isinstance(data.get("data"), dict):
+                    request_id = data["data"].get("id") or data["data"].get("requestId")
+                else:
+                    # Fallback на старый формат для обратной совместимости
+                    request_id = data.get("id") or data.get("requestId")
                 
                 if not request_id:
                     raise ValueError(f"Invalid response from WaveSpeed API: {data}")

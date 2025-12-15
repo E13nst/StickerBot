@@ -1,10 +1,33 @@
 import asyncio
 import logging
+import json
 from logging.handlers import RotatingFileHandler
+from pathlib import Path
+from datetime import datetime
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler, InlineQueryHandler,
     filters, ConversationHandler, ContextTypes
 )
+
+# #region agent log
+DEBUG_LOG_PATH = Path(__file__).parent.parent.parent / '.cursor' / 'debug.log'
+def _debug_log(location, message, data=None, hypothesis_id=None):
+    try:
+        DEBUG_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        entry = {
+            "timestamp": int(datetime.now().timestamp() * 1000),
+            "location": location,
+            "message": message,
+            "data": data or {},
+            "sessionId": "debug-session",
+            "runId": "run1",
+            "hypothesisId": hypothesis_id
+        }
+        with open(DEBUG_LOG_PATH, 'a', encoding='utf-8') as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + '\n')
+    except Exception:
+        pass
+# #endregion
 from src.config.settings import (
     BOT_TOKEN,
     GALLERY_BASE_URL,
@@ -95,21 +118,71 @@ logger = logging.getLogger(__name__)
 
 class StickerBot:
     def __init__(self):
-        self._validate_configuration()
-        self.application = Application.builder().token(BOT_TOKEN).build()
-        self.sticker_service = StickerService(BOT_TOKEN)
-        self.image_service = ImageService()
-        self.gallery_service = GalleryService(
-            base_url=GALLERY_BASE_URL,
-            service_token=GALLERY_SERVICE_TOKEN,
-            default_language=GALLERY_DEFAULT_LANGUAGE,
-        )
+        # #region agent log
+        _debug_log("bot/bot.py:__init__:entry", "Начало __init__ StickerBot", {}, "J")
+        # #endregion
+        try:
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:before_validate", "Перед валидацией конфигурации", {}, "J")
+            # #endregion
+            self._validate_configuration()
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:after_validate", "Валидация конфигурации пройдена", {}, "J")
+            # #endregion
+            
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:before_application", "Перед созданием Application", {}, "J")
+            # #endregion
+            self.application = Application.builder().token(BOT_TOKEN).build()
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:after_application", "Application создан", {}, "J")
+            # #endregion
+            
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:before_services", "Перед созданием сервисов", {}, "J")
+            # #endregion
+            self.sticker_service = StickerService(BOT_TOKEN)
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:after_sticker_service", "StickerService создан", {}, "J")
+            # #endregion
+            self.image_service = ImageService()
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:after_image_service", "ImageService создан", {}, "J")
+            # #endregion
+            self.gallery_service = GalleryService(
+                base_url=GALLERY_BASE_URL,
+                service_token=GALLERY_SERVICE_TOKEN,
+                default_language=GALLERY_DEFAULT_LANGUAGE,
+            )
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:after_gallery_service", "GalleryService создан", {}, "J")
+            # #endregion
 
-        # Инициализация компонентов для WaveSpeed generation
-        self._init_generation_components()
+            # Инициализация компонентов для WaveSpeed generation
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:before_generation", "Перед инициализацией компонентов генерации", {}, "J")
+            # #endregion
+            self._init_generation_components()
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:after_generation", "Компоненты генерации инициализированы", {}, "J")
+            # #endregion
 
-        self.setup_handlers()
-        self._shutdown_event = asyncio.Event()
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:before_handlers", "Перед setup_handlers", {}, "J")
+            # #endregion
+            self.setup_handlers()
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:after_handlers", "Handlers настроены", {}, "J")
+            # #endregion
+            self._shutdown_event = asyncio.Event()
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:success", "StickerBot инициализирован успешно", {}, "J")
+            # #endregion
+        except Exception as e:
+            # #region agent log
+            _debug_log("bot/bot.py:__init__:error", "Ошибка в __init__", {"error": str(e), "type": type(e).__name__}, "J")
+            # #endregion
+            raise
     
     def _init_generation_components(self):
         """Инициализация компонентов для генерации"""
@@ -169,7 +242,19 @@ class StickerBot:
 
     @staticmethod
     def _validate_configuration():
+        # #region agent log
+        _debug_log("bot/bot.py:_validate_configuration:entry", "Начало валидации конфигурации", {}, "I")
+        # #endregion
         missing = []
+
+        # #region agent log
+        _debug_log("bot/bot.py:_validate_configuration:checking", "Проверка переменных окружения", {
+            "BOT_TOKEN": bool(BOT_TOKEN),
+            "GALLERY_BASE_URL": bool(GALLERY_BASE_URL),
+            "GALLERY_SERVICE_TOKEN": bool(GALLERY_SERVICE_TOKEN),
+            "MINIAPP_GALLERY_URL": bool(MINIAPP_GALLERY_URL)
+        }, "I")
+        # #endregion
 
         if not BOT_TOKEN:
             missing.append('BOT_TOKEN')
@@ -181,10 +266,16 @@ class StickerBot:
             missing.append('MINIAPP_GALLERY_URL')
 
         if missing:
+            # #region agent log
+            _debug_log("bot/bot.py:_validate_configuration:missing", "Отсутствуют переменные окружения", {"missing": missing}, "I")
+            # #endregion
             raise ValueError(
                 f"Не заданы необходимые переменные окружения: {', '.join(missing)}. "
                 "Проверь .env или окружение и перезапусти бота."
             )
+        # #region agent log
+        _debug_log("bot/bot.py:_validate_configuration:success", "Валидация конфигурации успешна", {}, "I")
+        # #endregion
 
     def setup_handlers(self):
         # Создаем обертки для обработчиков с передачей сервисов
