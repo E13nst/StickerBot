@@ -15,7 +15,7 @@ from src.config.settings import (
     WAVESPEED_BG_REMOVE_ENABLED,
     MINIAPP_GALLERY_URL,
 )
-from src.utils.image_postprocess import validate_alpha_channel, convert_to_webp_rgba
+from src.utils.image_postprocess import validate_alpha_channel, convert_to_webp_rgba, create_placeholder_image
 
 logger = logging.getLogger(__name__)
 
@@ -85,18 +85,36 @@ async def handle_generate_callback(
     # Быстро отвечаем
     await query.answer("Generating…")
     
-    # Редактируем сообщение
-    status_text = "⏳ Generating…"
-    try:
-        if query.inline_message_id:
-            await context.bot.edit_message_text(
-                inline_message_id=query.inline_message_id,
-                text=status_text,
+    # Для inline_message_id: сразу отправляем placeholder image вместо текста
+    # Это упростит замену на финальное изображение (image → image проще, чем text → image)
+    if query.inline_message_id:
+        try:
+            placeholder_bytes = create_placeholder_image(text="Generating...")
+            placeholder_file = InputFile(io.BytesIO(placeholder_bytes), filename="placeholder.png")
+            placeholder_media = InputMediaPhoto(
+                media=placeholder_file,
+                caption="",
             )
-        else:
-            await query.message.edit_text(status_text)
-    except Exception as e:
-        logger.warning(f"Error editing message: {e}")
+            await context.bot.edit_message_media(
+                inline_message_id=query.inline_message_id,
+                media=placeholder_media,
+            )
+        except Exception as e:
+            # Fallback на текст, если не удалось отправить placeholder
+            logger.warning(f"Failed to send placeholder image, using text: {e}")
+            try:
+                await context.bot.edit_message_text(
+                    inline_message_id=query.inline_message_id,
+                    text="⏳ Generating…",
+                )
+            except Exception as text_error:
+                logger.warning(f"Failed to edit message text: {text_error}")
+    else:
+        # Для обычных сообщений оставляем текст
+        try:
+            await query.message.edit_text("⏳ Generating…")
+        except Exception as e:
+            logger.warning(f"Error editing message: {e}")
     
     # Запускаем фоновую задачу
     task = context.application.create_task(
@@ -165,18 +183,35 @@ async def handle_regenerate_callback(
     # Быстро отвечаем
     await query.answer("Regenerating…")
     
-    # Редактируем сообщение
-    status_text = "⏳ Regenerating…"
-    try:
-        if query.inline_message_id:
-            await context.bot.edit_message_text(
-                inline_message_id=query.inline_message_id,
-                text=status_text,
+    # Для inline_message_id: сразу отправляем placeholder image
+    if query.inline_message_id:
+        try:
+            placeholder_bytes = create_placeholder_image(text="Regenerating...")
+            placeholder_file = InputFile(io.BytesIO(placeholder_bytes), filename="placeholder.png")
+            placeholder_media = InputMediaPhoto(
+                media=placeholder_file,
+                caption="",
             )
-        else:
-            await query.message.edit_text(status_text)
-    except Exception as e:
-        logger.warning(f"Error editing message: {e}")
+            await context.bot.edit_message_media(
+                inline_message_id=query.inline_message_id,
+                media=placeholder_media,
+            )
+        except Exception as e:
+            # Fallback на текст
+            logger.warning(f"Failed to send placeholder image, using text: {e}")
+            try:
+                await context.bot.edit_message_text(
+                    inline_message_id=query.inline_message_id,
+                    text="⏳ Regenerating…",
+                )
+            except Exception as text_error:
+                logger.warning(f"Failed to edit message text: {text_error}")
+    else:
+        # Для обычных сообщений оставляем текст
+        try:
+            await query.message.edit_text("⏳ Regenerating…")
+        except Exception as e:
+            logger.warning(f"Error editing message: {e}")
     
     # Запускаем фоновую задачу (с новым seed=-1)
     task = context.application.create_task(

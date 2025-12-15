@@ -5,7 +5,7 @@ import pytest
 import io
 from PIL import Image
 
-from src.utils.image_postprocess import validate_alpha_channel, convert_to_webp_rgba
+from src.utils.image_postprocess import validate_alpha_channel, convert_to_webp_rgba, create_placeholder_image
 
 
 def test_validate_alpha_channel_rgba():
@@ -117,4 +117,31 @@ def test_convert_to_webp_rgba_invalid():
     # Act & Assert
     with pytest.raises(Exception):
         convert_to_webp_rgba(invalid_bytes)
+
+
+def test_create_placeholder_image():
+    """Тест создания placeholder изображения"""
+    # Act
+    placeholder_bytes = create_placeholder_image()
+    
+    # Assert
+    assert placeholder_bytes is not None
+    assert len(placeholder_bytes) > 0
+    
+    # Проверяем, что это валидное PNG изображение
+    img = Image.open(io.BytesIO(placeholder_bytes))
+    assert img.format == "PNG"
+    assert img.size == (512, 512)
+    assert img.mode == "RGBA"
+
+
+def test_create_placeholder_image_custom_size():
+    """Тест создания placeholder с кастомным размером"""
+    # Act
+    placeholder_bytes = create_placeholder_image(size=(256, 256), text="Test")
+    
+    # Assert
+    assert placeholder_bytes is not None
+    img = Image.open(io.BytesIO(placeholder_bytes))
+    assert img.size == (256, 256)
 
