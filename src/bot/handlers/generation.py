@@ -516,18 +516,30 @@ async def update_message_with_image(
                             keyboard = create_keyboard()
                             
                             if query.inline_message_id:
-                                # Для inline сообщений: отправляем новое сообщение со стикером в личный чат пользователя
-                                logger.info(f"[update_message_with_image] Has inline_message_id, sending new sticker message to user chat")
+                                # Для inline сообщений: отправляем новое сообщение со стикером в чат, откуда поступил запрос
+                                # Пытаемся получить chat_id из query.message, если доступно (когда inline сообщение уже отправлено в чат)
+                                target_chat_id = None
+                                if query.message and query.message.chat:
+                                    target_chat_id = query.message.chat.id
+                                    logger.info(f"[update_message_with_image] Has inline_message_id with message.chat, sending to chat_id: {target_chat_id}")
+                                else:
+                                    # Если нет доступа к chat (inline сообщение еще не отправлено в чат),
+                                    # отправляем в личный чат пользователя как fallback
+                                    target_chat_id = user_id
+                                    logger.warning(f"[update_message_with_image] Has inline_message_id but no message.chat available, "
+                                                 f"using user_id as fallback: {target_chat_id}. "
+                                                 f"Note: inline message may not have been sent to a chat yet.")
+                                
                                 try:
                                     await context.bot.send_sticker(
-                                        chat_id=user_id,
+                                        chat_id=target_chat_id,
                                         sticker=sticker_file_id,
                                         reply_markup=keyboard,
                                     )
-                                    logger.info(f"[update_message_with_image] SUCCESS: Sent new sticker message to user {user_id}")
+                                    logger.info(f"[update_message_with_image] SUCCESS: Sent new sticker message to chat {target_chat_id}")
                                     return
                                 except TelegramError as send_error:
-                                    logger.error(f"[update_message_with_image] ERROR: Failed to send sticker to user {user_id}: {send_error}")
+                                    logger.error(f"[update_message_with_image] ERROR: Failed to send sticker to chat {target_chat_id}: {send_error}")
                                     # Продолжаем с обычной логикой обновления
                             else:
                                 # Для обычных сообщений: удаляем старое и отправляем новое со стикером
