@@ -6,7 +6,7 @@ import time
 import random
 from typing import Optional, Union
 import httpx
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaDocument, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaDocument, InputMediaSticker, InputFile
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 
@@ -484,19 +484,18 @@ async def update_message_with_image(
                         if sticker_file_id and query.inline_message_id:
                             # Обновляем inline сообщение со стикером
                             keyboard = create_keyboard()
-                            await context.bot._request.post(
-                                "editMessageMedia",
-                                {
-                                    "inline_message_id": query.inline_message_id,
-                                    "media": {
-                                        "type": "sticker",
-                                        "sticker": sticker_file_id
-                                    },
-                                    "reply_markup": keyboard.to_dict() if keyboard else None
-                                }
-                            )
-                            logger.info("Successfully updated inline message with sticker from user set")
-                            return
+                            try:
+                                media = InputMediaSticker(sticker=sticker_file_id)
+                                await context.bot.edit_message_media(
+                                    inline_message_id=query.inline_message_id,
+                                    media=media,
+                                    reply_markup=keyboard,
+                                )
+                                logger.info("Successfully updated inline message with sticker from user set")
+                                return
+                            except TelegramError as sticker_error:
+                                logger.warning(f"Failed to update inline message with sticker: {sticker_error}")
+                                # Продолжаем с обычной логикой обновления
             except Exception as e:
                 logger.warning(f"Failed to save sticker to user set: {e}", exc_info=True)
                 # Продолжаем с обычной логикой обновления
