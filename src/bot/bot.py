@@ -242,6 +242,7 @@ class StickerBot:
         self.application.bot_data["prompt_store"] = self.prompt_store
         self.application.bot_data["quota_manager"] = self.quota_manager
         self.application.bot_data["wavespeed_client"] = self.wavespeed_client
+        self.application.bot_data["sticker_service"] = self.sticker_service
         # placeholder_sticker_file_id будет загружен при старте бота
 
     @staticmethod

@@ -48,7 +48,7 @@ class StickerManager:
             url = f"{self.base_url}/createNewStickerSet"
 
             files = {
-                'png_sticker': ('sticker.webp', png_sticker, 'image/webp')
+                'png_sticker': ('sticker.png', png_sticker, 'image/png')
             }
 
             data = {
@@ -78,7 +78,7 @@ class StickerManager:
             url = f"{self.base_url}/addStickerToSet"
 
             files = {
-                'png_sticker': ('sticker.webp', png_sticker, 'image/webp')
+                'png_sticker': ('sticker.png', png_sticker, 'image/png')
             }
 
             data = {
