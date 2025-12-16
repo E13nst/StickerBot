@@ -6,7 +6,7 @@ import time
 import random
 from typing import Optional, Union
 import httpx
-from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaDocument, InputMediaSticker, InputFile
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaDocument, InputFile
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 
@@ -482,14 +482,20 @@ async def update_message_with_image(
                         )
                         
                         if sticker_file_id and query.inline_message_id:
-                            # Обновляем inline сообщение со стикером
+                            # Обновляем inline сообщение со стикером через прямой вызов API
                             keyboard = create_keyboard()
                             try:
-                                media = InputMediaSticker(sticker=sticker_file_id)
-                                await context.bot.edit_message_media(
-                                    inline_message_id=query.inline_message_id,
-                                    media=media,
-                                    reply_markup=keyboard,
+                                # Используем прямой вызов API для обновления inline сообщения со стикером
+                                await context.bot.request.post(
+                                    "editMessageMedia",
+                                    {
+                                        "inline_message_id": query.inline_message_id,
+                                        "media": {
+                                            "type": "sticker",
+                                            "sticker": sticker_file_id
+                                        },
+                                        "reply_markup": keyboard.to_dict() if keyboard else None
+                                    }
                                 )
                                 logger.info("Successfully updated inline message with sticker from user set")
                                 return
