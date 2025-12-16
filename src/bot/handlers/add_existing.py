@@ -18,7 +18,7 @@ from src.config.settings import GALLERY_DEFAULT_LANGUAGE
 logger = logging.getLogger(__name__)
 
 
-async def add_to_existing(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def add_to_existing(update: Update, context: ContextTypes.DEFAULT_TYPE, gallery_service) -> int:
     """Добавление стикера в существующий стикерсет"""
     await update.message.reply_text(
         "Добавляем стикер в существующий стикерсет. Сначала выберем подходящий набор 👇",
@@ -27,7 +27,7 @@ async def add_to_existing(update: Update, context: ContextTypes.DEFAULT_TYPE) ->
 
     context.user_data.clear()
     context.user_data['action'] = 'add_existing'
-    return await show_existing_sets(update, context, page=0, gallery_service=None)
+    return await show_existing_sets(update, context, page=0, gallery_service=gallery_service)
 
 
 async def show_existing_sets(
