@@ -38,30 +38,37 @@ async def save_sticker_to_user_set(
     context: ContextTypes.DEFAULT_TYPE,
 ) -> Optional[str]:
     """Сохраняет PNG стикер в стикерсет пользователя и возвращает file_id"""
+    logger.info(f"[save_sticker_to_user_set] START: user_id={user_id}, username={user_username}, "
+                f"bot_username={bot_username}, png_size={len(png_bytes)} bytes")
     try:
         # Формируем имя стикерсета из username пользователя
         if user_username:
             short_name = user_username
+            logger.debug(f"[save_sticker_to_user_set] Using username as short_name: {short_name}")
         else:
             short_name = f"user_{user_id}"
+            logger.debug(f"[save_sticker_to_user_set] No username, using fallback: {short_name}")
         
         full_name = f"{short_name}_by_{bot_username}"
+        logger.info(f"[save_sticker_to_user_set] Sticker set name: {full_name}")
         
         # Проверяем существование стикерсета
+        logger.debug(f"[save_sticker_to_user_set] Checking sticker set availability: {full_name}")
         availability = await asyncio.to_thread(
             sticker_service.is_sticker_set_available,
             full_name
         )
+        logger.debug(f"[save_sticker_to_user_set] Availability check result: {availability}")
         
         if availability is None:
-            logger.warning(f"Could not check sticker set availability for {full_name}, trying to create")
+            logger.warning(f"[save_sticker_to_user_set] Could not check sticker set availability for {full_name}, trying to create")
             # Пробуем создать новый
             availability = True
         
         # Создаем или добавляем стикер
         if availability:
             # Стикерсет не существует - создаем новый
-            logger.info(f"Creating new sticker set: {full_name}")
+            logger.info(f"[save_sticker_to_user_set] Creating new sticker set: {full_name}")
             result = await asyncio.to_thread(
                 sticker_service.create_new_sticker_set,
                 user_id=user_id,
@@ -72,11 +79,12 @@ async def save_sticker_to_user_set(
             )
             
             if not result:
-                logger.error(f"Failed to create sticker set: {full_name}")
+                logger.error(f"[save_sticker_to_user_set] Failed to create sticker set: {full_name}")
                 return None
+            logger.info(f"[save_sticker_to_user_set] Sticker set created successfully: {full_name}")
         else:
             # Стикерсет существует - добавляем стикер
-            logger.info(f"Adding sticker to existing set: {full_name}")
+            logger.info(f"[save_sticker_to_user_set] Adding sticker to existing set: {full_name}")
             success = await asyncio.to_thread(
                 sticker_service.add_sticker_to_set,
                 user_id=user_id,
@@ -86,27 +94,31 @@ async def save_sticker_to_user_set(
             )
             
             if not success:
-                logger.error(f"Failed to add sticker to set: {full_name}")
+                logger.error(f"[save_sticker_to_user_set] Failed to add sticker to set: {full_name}")
                 return None
+            logger.info(f"[save_sticker_to_user_set] Sticker added successfully to: {full_name}")
         
         # Получаем file_id стикера из стикерсета
+        logger.debug(f"[save_sticker_to_user_set] Fetching sticker set to get file_id: {full_name}")
         try:
             sticker_set = await context.bot.get_sticker_set(full_name)
+            logger.debug(f"[save_sticker_to_user_set] Sticker set fetched, stickers count: {len(sticker_set.stickers) if sticker_set.stickers else 0}")
             if not sticker_set.stickers:
-                logger.error(f"Sticker set {full_name} has no stickers")
+                logger.error(f"[save_sticker_to_user_set] Sticker set {full_name} has no stickers")
                 return None
             
             # Возвращаем file_id последнего стикера (только что добавленного)
             sticker_file_id = sticker_set.stickers[-1].file_id
-            logger.info(f"Successfully saved sticker to {full_name}, file_id: {sticker_file_id[:20]}...")
+            logger.info(f"[save_sticker_to_user_set] SUCCESS: Saved sticker to {full_name}, "
+                       f"file_id: {sticker_file_id[:20]}..., total stickers: {len(sticker_set.stickers)}")
             return sticker_file_id
             
         except Exception as e:
-            logger.error(f"Failed to get sticker set {full_name}: {e}", exc_info=True)
+            logger.error(f"[save_sticker_to_user_set] ERROR: Failed to get sticker set {full_name}: {e}", exc_info=True)
             return None
             
     except Exception as e:
-        logger.error(f"Error saving sticker to user set: {e}", exc_info=True)
+        logger.error(f"[save_sticker_to_user_set] ERROR: Exception in save_sticker_to_user_set: {e}", exc_info=True)
         return None
 
 
@@ -410,7 +422,10 @@ async def run_generation_and_update_message(
                 logger.warning(f"Generation: Background removal error for {flux_image_url[:80]}..., using flux result as fallback: {e}", exc_info=True)
         
         # Обновляем сообщение с финальным изображением
-        logger.info(f"Generation: Updating message with final image: {final_image_url[:80]}...")
+        logger.info(f"[run_generation_and_update_message] Updating message with final image: {final_image_url[:80]}...")
+        logger.debug(f"[run_generation_and_update_message] Calling update_message_with_image with: "
+                    f"user_id={user_id}, prompt_hash={prompt_hash[:8]}..., "
+                    f"has_inline_id={bool(query.inline_message_id)}, has_message={bool(query.message)}")
         
         await update_message_with_image(
             query=query,
@@ -419,10 +434,10 @@ async def run_generation_and_update_message(
             prompt_hash=prompt_hash,
             caption="✅ Generated by STIXLY",
         )
-        logger.info(f"Generation: Successfully completed for user {user_id}, prompt_hash={prompt_hash[:8]}...")
+        logger.info(f"[run_generation_and_update_message] SUCCESS: Generation completed for user {user_id}, prompt_hash={prompt_hash[:8]}...")
         
     except Exception as e:
-        logger.exception(f"Error in generation task for user {user_id}: {e}")
+        logger.error(f"[run_generation_and_update_message] ERROR: Exception in generation task for user {user_id}: {e}", exc_info=True)
         await update_message_with_error(
             query=query,
             context=context,
@@ -443,6 +458,9 @@ async def update_message_with_image(
     caption: str = "✅ Generated by STIXLY",
 ) -> None:
     """Обновить сообщение с изображением (с fallback на upload)"""
+    logger.info(f"[update_message_with_image] START: image_url={image_url[:80]}..., "
+                f"prompt_hash={prompt_hash[:8]}..., has_inline_id={bool(query.inline_message_id)}, "
+                f"has_message={bool(query.message)}")
     
     def create_keyboard() -> InlineKeyboardMarkup:
         """Создать клавиатуру с кнопками"""
@@ -458,20 +476,28 @@ async def update_message_with_image(
         return InlineKeyboardMarkup(buttons)
     
     # Сохраняем PNG в стикерсет пользователя и обновляем сообщение
+    logger.debug(f"[update_message_with_image] Checking sticker_service availability")
     sticker_service = context.bot_data.get("sticker_service")
+    logger.debug(f"[update_message_with_image] sticker_service={sticker_service is not None}, "
+                 f"query.from_user={query.from_user is not None if query else None}")
     if sticker_service and query.from_user:
         user_id = query.from_user.id
         user_username = query.from_user.username
         bot_username = context.bot.username
         
         if bot_username:
+            logger.debug(f"[update_message_with_image] bot_username available: {bot_username}")
             try:
                 # Скачиваем PNG изображение
+                logger.debug(f"[update_message_with_image] Getting wavespeed_client from bot_data")
                 wavespeed_client = context.bot_data.get("wavespeed_client")
                 if wavespeed_client:
+                    logger.info(f"[update_message_with_image] Downloading PNG image from: {image_url[:80]}...")
                     png_bytes = await wavespeed_client.download_image(image_url)
                     if png_bytes:
+                        logger.info(f"[update_message_with_image] PNG downloaded successfully, size: {len(png_bytes)} bytes")
                         # Сохраняем в стикерсет пользователя
+                        logger.debug(f"[update_message_with_image] Calling save_sticker_to_user_set")
                         sticker_file_id = await save_sticker_to_user_set(
                             user_id=user_id,
                             user_username=user_username,
@@ -480,35 +506,65 @@ async def update_message_with_image(
                             sticker_service=sticker_service,
                             context=context,
                         )
+                        logger.debug(f"[update_message_with_image] save_sticker_to_user_set returned: {sticker_file_id is not None}")
                         
-                        if sticker_file_id and query.inline_message_id:
-                            # Обновляем inline сообщение со стикером через прямой вызов API
+                        if sticker_file_id:
+                            # Стикер успешно сохранен в стикерсет пользователя
+                            logger.info(f"[update_message_with_image] Sticker saved to user set {user_username or f'user_{user_id}'}_by_{bot_username}. "
+                                      f"File ID: {sticker_file_id[:20]}...")
+                            
                             keyboard = create_keyboard()
-                            try:
-                                # Используем прямой вызов API для обновления inline сообщения со стикером
-                                await context.bot.request.post(
-                                    "editMessageMedia",
-                                    {
-                                        "inline_message_id": query.inline_message_id,
-                                        "media": {
-                                            "type": "sticker",
-                                            "sticker": sticker_file_id
-                                        },
-                                        "reply_markup": keyboard.to_dict() if keyboard else None
-                                    }
-                                )
-                                logger.info("Successfully updated inline message with sticker from user set")
-                                return
-                            except TelegramError as sticker_error:
-                                logger.warning(f"Failed to update inline message with sticker: {sticker_error}")
-                                # Продолжаем с обычной логикой обновления
+                            
+                            if query.inline_message_id:
+                                # Для inline сообщений: отправляем новое сообщение со стикером в личный чат пользователя
+                                logger.info(f"[update_message_with_image] Has inline_message_id, sending new sticker message to user chat")
+                                try:
+                                    await context.bot.send_sticker(
+                                        chat_id=user_id,
+                                        sticker=sticker_file_id,
+                                        reply_markup=keyboard,
+                                    )
+                                    logger.info(f"[update_message_with_image] SUCCESS: Sent new sticker message to user {user_id}")
+                                    return
+                                except TelegramError as send_error:
+                                    logger.error(f"[update_message_with_image] ERROR: Failed to send sticker to user {user_id}: {send_error}")
+                                    # Продолжаем с обычной логикой обновления
+                            else:
+                                # Для обычных сообщений: удаляем старое и отправляем новое со стикером
+                                logger.info(f"[update_message_with_image] Regular message, deleting old and sending new sticker")
+                                try:
+                                    # Удаляем старое сообщение
+                                    if query.message:
+                                        logger.debug(f"[update_message_with_image] Deleting old message: {query.message.message_id}")
+                                        await query.message.delete()
+                                        logger.debug(f"[update_message_with_image] Old message deleted successfully")
+                                    
+                                    # Отправляем новое сообщение со стикером
+                                    await context.bot.send_sticker(
+                                        chat_id=query.message.chat.id if query.message else user_id,
+                                        sticker=sticker_file_id,
+                                        reply_markup=keyboard,
+                                    )
+                                    logger.info(f"[update_message_with_image] SUCCESS: Sent new sticker message after deleting old one")
+                                    return
+                                except TelegramError as send_error:
+                                    logger.error(f"[update_message_with_image] ERROR: Failed to delete/send sticker: {send_error}")
+                                    # Продолжаем с обычной логикой обновления
+                    else:
+                        logger.warning(f"[update_message_with_image] Failed to download PNG image from: {image_url[:80]}...")
+                else:
+                    logger.warning(f"[update_message_with_image] wavespeed_client not available in bot_data")
             except Exception as e:
-                logger.warning(f"Failed to save sticker to user set: {e}", exc_info=True)
+                logger.error(f"[update_message_with_image] ERROR: Exception while saving sticker to user set: {e}", exc_info=True)
                 # Продолжаем с обычной логикой обновления
+        else:
+            logger.warning(f"[update_message_with_image] bot_username not available")
     
     # Обычная логика обновления сообщения (fallback)
     # Пробуем отправить PNG URL напрямую или скачать и отправить
+    logger.info(f"[update_message_with_image] FALLBACK: Using standard message update logic")
     try:
+        logger.debug(f"[update_message_with_image] Creating InputMediaPhoto with URL: {image_url[:80]}...")
         media = InputMediaPhoto(
             media=image_url,
             caption=caption,
@@ -518,28 +574,35 @@ async def update_message_with_image(
         keyboard = create_keyboard()
         
         if query.inline_message_id:
+            logger.info(f"[update_message_with_image] Updating inline message media with photo URL")
             await context.bot.edit_message_media(
                 inline_message_id=query.inline_message_id,
                 media=media,
                 reply_markup=keyboard,
             )
+            logger.info(f"[update_message_with_image] SUCCESS: Inline message updated with photo")
         else:
+            logger.info(f"[update_message_with_image] Updating regular message media with photo URL")
             await query.message.edit_media(
                 media=media,
                 reply_markup=keyboard,
             )
+            logger.info(f"[update_message_with_image] SUCCESS: Regular message updated with photo")
         return
         
     except TelegramError as e:
+        logger.warning(f"[update_message_with_image] ERROR: Failed to update message with photo URL: {e}")
         # Если не получилось с URL, скачиваем и загружаем
         if "url" in str(e).lower() or "download" in str(e).lower():
-            logger.info(f"URL upload failed, downloading image: {type(e).__name__}")
+            logger.info(f"[update_message_with_image] URL upload failed, downloading image: {type(e).__name__}")
             try:
                 # Скачиваем изображение
+                logger.debug(f"[update_message_with_image] Downloading image via httpx: {image_url[:80]}...")
                 async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
                     response = await client.get(image_url)
                     response.raise_for_status()
                     image_bytes = response.content
+                logger.info(f"[update_message_with_image] Image downloaded via httpx, size: {len(image_bytes)} bytes")
                 
                 # Создаем InputFile
                 image_file = InputFile(
@@ -556,34 +619,42 @@ async def update_message_with_image(
                 keyboard = create_keyboard()
                 
                 if query.inline_message_id:
+                    logger.info(f"[update_message_with_image] Updating inline message with downloaded image file")
                     await context.bot.edit_message_media(
                         inline_message_id=query.inline_message_id,
                         media=media,
                         reply_markup=keyboard,
                     )
+                    logger.info(f"[update_message_with_image] SUCCESS: Inline message updated with downloaded image")
                 else:
                     try:
+                        logger.info(f"[update_message_with_image] Updating regular message with downloaded image file")
                         await query.message.edit_media(
-                        media=media,
-                        reply_markup=keyboard,
-                    )
-                    except TelegramError:
+                            media=media,
+                            reply_markup=keyboard,
+                        )
+                        logger.info(f"[update_message_with_image] SUCCESS: Regular message updated with downloaded image")
+                    except TelegramError as edit_error:
+                        logger.warning(f"[update_message_with_image] Failed to edit message, trying to send new: {edit_error}")
                         # Если редактирование не работает, отправляем новое сообщение
                         if query.message and query.message.chat:
+                            logger.info(f"[update_message_with_image] Sending new photo message to chat_id: {query.message.chat.id}")
                             await context.bot.send_photo(
                                 chat_id=query.message.chat.id,
                                 photo=image_file,
                                 caption=caption,
                                 reply_markup=keyboard,
                             )
+                            logger.info(f"[update_message_with_image] SUCCESS: New photo message sent")
                         else:
-                            logger.warning("Cannot send new message: query.message.chat is not available")
+                            logger.error(f"[update_message_with_image] ERROR: Cannot send new message: query.message.chat is not available")
                 return
                 
             except Exception as upload_error:
-                logger.error(f"Error uploading image: {type(upload_error).__name__}")
+                logger.error(f"[update_message_with_image] ERROR: Exception while uploading image: {upload_error}", exc_info=True)
         
         # Если и upload не сработал, показываем ошибку
+        logger.error(f"[update_message_with_image] ERROR: All update methods failed, raising exception")
         raise
 
 

@@ -4,8 +4,9 @@
 import pytest
 from unittest.mock import AsyncMock, Mock, MagicMock, patch
 from telegram.error import TelegramError
+from telegram import StickerSet, Sticker
 
-from src.bot.handlers.generation import update_message_with_image
+from src.bot.handlers.generation import update_message_with_image, save_sticker_to_user_set, save_sticker_to_user_set
 
 
 @pytest.fixture
@@ -36,251 +37,255 @@ def mock_context():
     return context
 
 
-@pytest.mark.asyncio
-async def test_update_message_with_image_should_convert_to_webp_never_uses_photo(mock_query, mock_context):
-    """Тест: при should_convert_to_webp=True никогда не используется InputMediaPhoto"""
-    from telegram import InputMediaPhoto, InputMediaDocument
-    
-    # Arrange
-    image_url = "https://example.com/image.png"
-    prompt_hash = "test_hash"
-    caption = "Test caption"
-    
-    # Мокаем успешное скачивание и конвертацию
-    test_image_bytes = b"fake_image_data"
-    test_webp_bytes = b"fake_webp_data"
-    
-    mock_wavespeed_client = mock_context.bot_data["wavespeed_client"]
-    mock_wavespeed_client.download_image = AsyncMock(return_value=test_image_bytes)
-    
-    # Мокаем функции конвертации
-    with patch("src.bot.handlers.generation.convert_to_webp_rgba") as mock_convert, \
-         patch("src.bot.handlers.generation.validate_alpha_channel") as mock_validate:
-        
-        mock_validate.return_value = True
-        mock_convert.return_value = test_webp_bytes
-        
-        # Мокаем успешное редактирование
-        mock_query.message.edit_media = AsyncMock()
-        
-        # Act
-        await update_message_with_image(
-            query=mock_query,
-            context=mock_context,
-            image_url=image_url,
-            prompt_hash=prompt_hash,
-            caption=caption,
-            should_convert_to_webp=True,
-        )
-        
-        # Assert: проверяем, что edit_media был вызван с InputMediaDocument
-        mock_query.message.edit_media.assert_called_once()
-        call_args = mock_query.message.edit_media.call_args
-        
-        # Проверяем, что media - это InputMediaDocument, а не InputMediaPhoto
-        media_arg = call_args.kwargs.get("media")
-        assert isinstance(media_arg, InputMediaDocument), "Should use InputMediaDocument, not InputMediaPhoto"
-        assert not isinstance(media_arg, InputMediaPhoto), "Should NOT use InputMediaPhoto"
-        
-        # Проверяем, что send_photo НЕ был вызван
-        mock_context.bot.send_photo.assert_not_called()
+# Старые тесты для конвертации в WebP удалены, так как эта функциональность была удалена из кода
 
+
+# Новые тесты для функциональности сохранения в стикерсет и отправки нового сообщения
 
 @pytest.mark.asyncio
-async def test_update_message_with_image_should_convert_to_webp_fallback_to_photo_for_inline(mock_query, mock_context):
-    """Тест: при should_convert_to_webp=True и inline_message_id, при ошибке document редактирования пробуется photo fallback"""
-    from telegram import InputMediaPhoto, InputMediaDocument
+async def test_save_sticker_to_user_set_creates_new_set(mock_context):
+    """Тест: создание нового стикерсета при сохранении стикера"""
+    from telegram import StickerSet, Sticker
     
     # Arrange
-    image_url = "https://example.com/image.png"
-    prompt_hash = "test_hash"
-    caption = "Test caption"
+    user_id = 12345
+    user_username = "testuser"
+    bot_username = "testbot"
+    png_bytes = b"fake_png_data"
     
-    # Устанавливаем inline_message_id
-    mock_query.inline_message_id = "inline_123"
-    mock_query.message = None  # Для inline нет message
+    mock_sticker_service = MagicMock()
+    mock_sticker_service.is_sticker_set_available = Mock(return_value=True)  # Стикерсет не существует
+    mock_sticker_service.create_new_sticker_set = Mock(return_value={"ok": True})
     
-    test_image_bytes = b"fake_image_data"
-    test_webp_bytes = b"fake_webp_data"
+    mock_sticker_set = MagicMock(spec=StickerSet)
+    mock_sticker = MagicMock(spec=Sticker)
+    mock_sticker.file_id = "CAACAgIAAxUAAWlBOzKD_test_file_id"
+    mock_sticker_set.stickers = [mock_sticker]
     
-    mock_wavespeed_client = mock_context.bot_data["wavespeed_client"]
-    mock_wavespeed_client.download_image = AsyncMock(return_value=test_image_bytes)
-    
-    # Мокаем функции конвертации
-    with patch("src.bot.handlers.generation.convert_to_webp_rgba") as mock_convert, \
-         patch("src.bot.handlers.generation.validate_alpha_channel") as mock_validate:
-        
-        mock_validate.return_value = True
-        mock_convert.return_value = test_webp_bytes
-        
-        # Мокаем: document fail, photo success
-        call_count = 0
-        def mock_edit_media(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            media = kwargs.get("media")
-            if call_count == 1 and isinstance(media, InputMediaDocument):
-                # Первый вызов (document) - ошибка
-                raise TelegramError("Document edit failed")
-            elif call_count == 2 and isinstance(media, InputMediaPhoto):
-                # Второй вызов (photo) - успех
-                return AsyncMock()
-            else:
-                raise TelegramError("Unexpected call")
-        
-        mock_context.bot.edit_message_media = AsyncMock(side_effect=mock_edit_media)
-        mock_context.bot.username = "test_bot"
-        
-        # Act
-        await update_message_with_image(
-            query=mock_query,
-            context=mock_context,
-            image_url=image_url,
-            prompt_hash=prompt_hash,
-            caption=caption,
-            should_convert_to_webp=True,
-        )
-        
-        # Assert: проверяем, что edit_message_media был вызван дважды (document, затем photo)
-        assert mock_context.bot.edit_message_media.call_count == 2
-        
-        # Проверяем, что edit_message_text НЕ был вызван (photo fallback сработал)
-        mock_context.bot.edit_message_text.assert_not_called()
-        
-        # Проверяем, что send_photo НЕ был вызван
-        mock_context.bot.send_photo.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_update_message_with_image_should_convert_to_webp_double_fail_for_inline(mock_query, mock_context):
-    """Тест: при should_convert_to_webp=True и inline_message_id, при двойном фейле (document + photo) показывается текст"""
-    from telegram import InputMediaPhoto, InputMediaDocument
-    
-    # Arrange
-    image_url = "https://example.com/image.png"
-    prompt_hash = "test_hash"
-    caption = "Test caption"
-    
-    # Устанавливаем inline_message_id
-    mock_query.inline_message_id = "inline_123"
-    mock_query.message = None  # Для inline нет message
-    
-    test_image_bytes = b"fake_image_data"
-    test_webp_bytes = b"fake_webp_data"
-    
-    mock_wavespeed_client = mock_context.bot_data["wavespeed_client"]
-    mock_wavespeed_client.download_image = AsyncMock(return_value=test_image_bytes)
-    
-    # Мокаем функции конвертации
-    with patch("src.bot.handlers.generation.convert_to_webp_rgba") as mock_convert, \
-         patch("src.bot.handlers.generation.validate_alpha_channel") as mock_validate:
-        
-        mock_validate.return_value = True
-        mock_convert.return_value = test_webp_bytes
-        
-        # Мокаем: document fail, photo fail
-        call_count = 0
-        def mock_edit_media(*args, **kwargs):
-            nonlocal call_count
-            call_count += 1
-            raise TelegramError(f"Edit failed {call_count}")
-        
-        mock_context.bot.edit_message_media = AsyncMock(side_effect=mock_edit_media)
-        mock_context.bot.username = "test_bot"
-        
-        # Act
-        await update_message_with_image(
-            query=mock_query,
-            context=mock_context,
-            image_url=image_url,
-            prompt_hash=prompt_hash,
-            caption=caption,
-            should_convert_to_webp=True,
-        )
-        
-        # Assert: проверяем, что edit_message_media был вызван дважды (document, затем photo)
-        assert mock_context.bot.edit_message_media.call_count == 2
-        
-        # Проверяем, что edit_message_text был вызван (last resort)
-        mock_context.bot.edit_message_text.assert_called_once()
-        call_args = mock_context.bot.edit_message_text.call_args
-        assert "cannot preview media" in call_args.kwargs.get("text", "").lower()
-        
-        # Проверяем, что send_photo НЕ был вызван
-        mock_context.bot.send_photo.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_update_message_with_image_should_convert_to_webp_fallback_to_document_for_chat(mock_query, mock_context):
-    """Тест: при should_convert_to_webp=True и chat_id, при ошибке редактирования отправляется документ, а не фото"""
-    from telegram import InputMediaPhoto
-    
-    # Arrange
-    image_url = "https://example.com/image.png"
-    prompt_hash = "test_hash"
-    caption = "Test caption"
-    
-    test_image_bytes = b"fake_image_data"
-    test_webp_bytes = b"fake_webp_data"
-    
-    mock_wavespeed_client = mock_context.bot_data["wavespeed_client"]
-    mock_wavespeed_client.download_image = AsyncMock(return_value=test_image_bytes)
-    
-    # Мокаем функции конвертации
-    with patch("src.bot.handlers.generation.convert_to_webp_rgba") as mock_convert, \
-         patch("src.bot.handlers.generation.validate_alpha_channel") as mock_validate:
-        
-        mock_validate.return_value = True
-        mock_convert.return_value = test_webp_bytes
-        
-        # Мокаем ошибку редактирования
-        mock_query.message.edit_media = AsyncMock(side_effect=TelegramError("Edit failed"))
-        
-        # Act
-        await update_message_with_image(
-            query=mock_query,
-            context=mock_context,
-            image_url=image_url,
-            prompt_hash=prompt_hash,
-            caption=caption,
-            should_convert_to_webp=True,
-        )
-        
-        # Assert: проверяем, что был вызван send_document, а не send_photo
-        mock_context.bot.send_document.assert_called_once()
-        
-        # Проверяем, что send_photo НЕ был вызван
-        mock_context.bot.send_photo.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_update_message_with_image_no_convert_uses_photo(mock_query, mock_context):
-    """Тест: при should_convert_to_webp=False используется InputMediaPhoto (обычное поведение)"""
-    from telegram import InputMediaPhoto
-    
-    # Arrange
-    image_url = "https://example.com/image.png"
-    prompt_hash = "test_hash"
-    caption = "Test caption"
-    
-    # Мокаем успешное редактирование с URL
-    mock_query.message.edit_media = AsyncMock()
+    mock_context.bot.get_sticker_set = AsyncMock(return_value=mock_sticker_set)
     
     # Act
-    await update_message_with_image(
-        query=mock_query,
+    result = await save_sticker_to_user_set(
+        user_id=user_id,
+        user_username=user_username,
+        bot_username=bot_username,
+        png_bytes=png_bytes,
+        sticker_service=mock_sticker_service,
         context=mock_context,
-        image_url=image_url,
-        prompt_hash=prompt_hash,
-        caption=caption,
-        should_convert_to_webp=False,  # Обычное поведение
     )
-        
-    # Assert: проверяем, что edit_media был вызван с InputMediaPhoto
-    mock_query.message.edit_media.assert_called_once()
-    call_args = mock_query.message.edit_media.call_args
     
-    # Проверяем, что media - это InputMediaPhoto
-    media_arg = call_args.kwargs.get("media")
-    assert isinstance(media_arg, InputMediaPhoto), "Should use InputMediaPhoto when should_convert_to_webp=False"
+    # Assert
+    assert result == "CAACAgIAAxUAAWlBOzKD_test_file_id"
+    mock_sticker_service.is_sticker_set_available.assert_called_once_with("testuser_by_testbot")
+    mock_sticker_service.create_new_sticker_set.assert_called_once()
+    mock_sticker_service.add_sticker_to_set.assert_not_called()
+    mock_context.bot.get_sticker_set.assert_called_once_with("testuser_by_testbot")
+
+
+@pytest.mark.asyncio
+async def test_save_sticker_to_user_set_adds_to_existing(mock_context):
+    """Тест: добавление стикера в существующий стикерсет"""
+    from telegram import StickerSet, Sticker
+    
+    # Arrange
+    user_id = 12345
+    user_username = "testuser"
+    bot_username = "testbot"
+    png_bytes = b"fake_png_data"
+    
+    mock_sticker_service = MagicMock()
+    mock_sticker_service.is_sticker_set_available = Mock(return_value=False)  # Стикерсет существует
+    mock_sticker_service.add_sticker_to_set = Mock(return_value=True)
+    
+    mock_sticker_set = MagicMock(spec=StickerSet)
+    mock_sticker1 = MagicMock(spec=Sticker)
+    mock_sticker1.file_id = "old_file_id"
+    mock_sticker2 = MagicMock(spec=Sticker)
+    mock_sticker2.file_id = "new_file_id"
+    mock_sticker_set.stickers = [mock_sticker1, mock_sticker2]
+    
+    mock_context.bot.get_sticker_set = AsyncMock(return_value=mock_sticker_set)
+    
+    # Act
+    result = await save_sticker_to_user_set(
+        user_id=user_id,
+        user_username=user_username,
+        bot_username=bot_username,
+        png_bytes=png_bytes,
+        sticker_service=mock_sticker_service,
+        context=mock_context,
+    )
+    
+    # Assert
+    assert result == "new_file_id"  # Последний стикер (только что добавленный)
+    mock_sticker_service.is_sticker_set_available.assert_called_once_with("testuser_by_testbot")
+    mock_sticker_service.add_sticker_to_set.assert_called_once()
+    mock_sticker_service.create_new_sticker_set.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_save_sticker_to_user_set_fallback_username(mock_context):
+    """Тест: использование fallback username при отсутствии username пользователя"""
+    from telegram import StickerSet, Sticker
+    
+    # Arrange
+    user_id = 12345
+    user_username = None  # Нет username
+    bot_username = "testbot"
+    png_bytes = b"fake_png_data"
+    
+    mock_sticker_service = MagicMock()
+    mock_sticker_service.is_sticker_set_available = Mock(return_value=True)
+    mock_sticker_service.create_new_sticker_set = Mock(return_value={"ok": True})
+    
+    mock_sticker_set = MagicMock(spec=StickerSet)
+    mock_sticker = MagicMock(spec=Sticker)
+    mock_sticker.file_id = "test_file_id"
+    mock_sticker_set.stickers = [mock_sticker]
+    
+    mock_context.bot.get_sticker_set = AsyncMock(return_value=mock_sticker_set)
+    
+    # Act
+    result = await save_sticker_to_user_set(
+        user_id=user_id,
+        user_username=user_username,
+        bot_username=bot_username,
+        png_bytes=png_bytes,
+        sticker_service=mock_sticker_service,
+        context=mock_context,
+    )
+    
+    # Assert
+    assert result == "test_file_id"
+    # Проверяем, что использовался fallback: user_{user_id}
+    mock_sticker_service.is_sticker_set_available.assert_called_once_with("user_12345_by_testbot")
+    mock_sticker_service.create_new_sticker_set.assert_called_once()
+    call_args = mock_sticker_service.create_new_sticker_set.call_args
+    assert call_args.kwargs["name"] == "user_12345_by_testbot"
+
+
+@pytest.mark.asyncio
+async def test_update_message_with_image_sends_sticker_for_inline(mock_query, mock_context):
+    """Тест: для inline сообщений отправляется новое сообщение со стикером в личный чат"""
+    # Arrange
+    image_url = "https://example.com/image.png"
+    prompt_hash = "test_hash"
+    
+    mock_query.inline_message_id = "inline_123"
+    mock_query.from_user = MagicMock()
+    mock_query.from_user.id = 12345
+    mock_query.from_user.username = "testuser"
+    
+    mock_context.bot.username = "testbot"
+    mock_context.bot.send_sticker = AsyncMock()
+    
+    mock_sticker_service = MagicMock()
+    mock_context.bot_data["sticker_service"] = mock_sticker_service
+    
+    mock_wavespeed_client = mock_context.bot_data["wavespeed_client"]
+    mock_wavespeed_client.download_image = AsyncMock(return_value=b"fake_png_data")
+    
+    # Мокаем save_sticker_to_user_set
+    with patch("src.bot.handlers.generation.save_sticker_to_user_set") as mock_save:
+        mock_save.return_value = "CAACAgIAAxUAAWlBOzKD_test_file_id"
+        
+        # Act
+        await update_message_with_image(
+            query=mock_query,
+            context=mock_context,
+            image_url=image_url,
+            prompt_hash=prompt_hash,
+        )
+        
+        # Assert
+        mock_save.assert_called_once()
+        mock_context.bot.send_sticker.assert_called_once()
+        call_args = mock_context.bot.send_sticker.call_args
+        assert call_args.kwargs["chat_id"] == 12345
+        assert call_args.kwargs["sticker"] == "CAACAgIAAxUAAWlBOzKD_test_file_id"
+        # Проверяем, что edit_message_media НЕ был вызван
+        mock_context.bot.edit_message_media.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_update_message_with_image_deletes_and_sends_sticker_for_regular(mock_query, mock_context):
+    """Тест: для обычных сообщений удаляется старое и отправляется новое со стикером"""
+    # Arrange
+    image_url = "https://example.com/image.png"
+    prompt_hash = "test_hash"
+    
+    mock_query.inline_message_id = None
+    mock_query.from_user = MagicMock()
+    mock_query.from_user.id = 12345
+    mock_query.from_user.username = "testuser"
+    mock_query.message.chat.id = 67890
+    mock_query.message.delete = AsyncMock()
+    
+    mock_context.bot.username = "testbot"
+    mock_context.bot.send_sticker = AsyncMock()
+    
+    mock_sticker_service = MagicMock()
+    mock_context.bot_data["sticker_service"] = mock_sticker_service
+    
+    mock_wavespeed_client = mock_context.bot_data["wavespeed_client"]
+    mock_wavespeed_client.download_image = AsyncMock(return_value=b"fake_png_data")
+    
+    # Мокаем save_sticker_to_user_set
+    with patch("src.bot.handlers.generation.save_sticker_to_user_set") as mock_save:
+        mock_save.return_value = "CAACAgIAAxUAAWlBOzKD_test_file_id"
+        
+        # Act
+        await update_message_with_image(
+            query=mock_query,
+            context=mock_context,
+            image_url=image_url,
+            prompt_hash=prompt_hash,
+        )
+        
+        # Assert
+        mock_save.assert_called_once()
+        mock_query.message.delete.assert_called_once()
+        mock_context.bot.send_sticker.assert_called_once()
+        call_args = mock_context.bot.send_sticker.call_args
+        assert call_args.kwargs["chat_id"] == 67890
+        assert call_args.kwargs["sticker"] == "CAACAgIAAxUAAWlBOzKD_test_file_id"
+
+
+@pytest.mark.asyncio
+async def test_update_message_with_image_fallback_when_sticker_save_fails(mock_query, mock_context):
+    """Тест: при ошибке сохранения стикера используется fallback логика"""
+    # Arrange
+    image_url = "https://example.com/image.png"
+    prompt_hash = "test_hash"
+    
+    mock_query.inline_message_id = None
+    mock_query.from_user = MagicMock()
+    mock_query.from_user.id = 12345
+    mock_query.message.edit_media = AsyncMock()
+    
+    mock_sticker_service = MagicMock()
+    mock_context.bot_data["sticker_service"] = mock_sticker_service
+    
+    mock_wavespeed_client = mock_context.bot_data["wavespeed_client"]
+    mock_wavespeed_client.download_image = AsyncMock(return_value=b"fake_png_data")
+    
+    # Мокаем save_sticker_to_user_set с ошибкой
+    with patch("src.bot.handlers.generation.save_sticker_to_user_set") as mock_save:
+        mock_save.return_value = None  # Ошибка сохранения
+        
+        # Act
+        await update_message_with_image(
+            query=mock_query,
+            context=mock_context,
+            image_url=image_url,
+            prompt_hash=prompt_hash,
+        )
+        
+        # Assert
+        mock_save.assert_called_once()
+        # Проверяем, что использовалась fallback логика (edit_media с фото)
+        mock_query.message.edit_media.assert_called_once()
+        call_args = mock_query.message.edit_media.call_args
+        from telegram import InputMediaPhoto
+        assert isinstance(call_args.kwargs["media"], InputMediaPhoto)
 
