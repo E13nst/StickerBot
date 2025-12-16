@@ -4,7 +4,7 @@ import io
 import logging
 import time
 import random
-from typing import Optional
+from typing import Optional, Union
 import httpx
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, InputMediaPhoto, InputMediaDocument, InputFile
 from telegram.ext import ContextTypes
@@ -368,63 +368,150 @@ async def update_message_with_image(
     should_convert_to_webp: bool = False,
 ) -> None:
     """Обновить сообщение с изображением (с fallback на upload)"""
-    # Создаем кнопки
-    buttons = []
     
-    if MINIAPP_GALLERY_URL:
+    def create_keyboard(sticker_file_id: Optional[str] = None, image_url_param: Optional[str] = None) -> InlineKeyboardMarkup:
+        """Создать клавиатуру с кнопками, передавая информацию о стикере в MiniApp"""
+        buttons = []
+        
+        if MINIAPP_GALLERY_URL:
+            # Формируем URL для MiniApp с информацией о стикере
+            save_url = f"{MINIAPP_GALLERY_URL}?action=save&hash={prompt_hash}"
+            if sticker_file_id:
+                # Для inline сообщений передаем file_id стикера
+                save_url += f"&sticker_file_id={sticker_file_id}"
+            elif image_url_param:
+                # Для обычных сообщений передаем URL изображения
+                save_url += f"&image_url={image_url_param}"
+            
+            buttons.append([
+                InlineKeyboardButton(
+                    "Save to Stixly",
+                    url=save_url
+                )
+            ])
+        
         buttons.append([
             InlineKeyboardButton(
-                "Save to Stixly",
-                url=f"{MINIAPP_GALLERY_URL}?action=save&hash={prompt_hash}"
+                "Regenerate",
+                callback_data=f"regen:{prompt_hash}"
             )
         ])
-    
-    buttons.append([
-        InlineKeyboardButton(
-            "Regenerate",
-            callback_data=f"regen:{prompt_hash}"
-        )
-    ])
-    
-    keyboard = InlineKeyboardMarkup(buttons)
+        
+        return InlineKeyboardMarkup(buttons)
     
     # Если нужно конвертировать в WebP (только после успешного bg-remover)
     # ВАЖНО: Никогда не используем InputMediaPhoto для прозрачных изображений
     if should_convert_to_webp:
-        # Для inline_message_id используем URL напрямую (Telegram не поддерживает InputFile с bytes)
+        # Для inline_message_id нужно заменить стикер на стикер (Telegram не позволяет менять тип медиа)
         if query.inline_message_id:
-            # ВАЖНО: Не скачиваем изображение, используем URL напрямую
-            try:
-                # Попытка A: InputMediaDocument с URL (для прозрачного фона)
-                media = InputMediaDocument(
-                    media=image_url,  # URL вместо InputFile
-                    caption=caption,
-                )
-                await context.bot.edit_message_media(
+            wavespeed_client = context.bot_data.get("wavespeed_client")
+            if not wavespeed_client:
+                logger.warning("WaveSpeed client not available for inline sticker upload")
+                # Fallback на текст
+                keyboard = create_keyboard()
+                await context.bot.edit_message_text(
                     inline_message_id=query.inline_message_id,
-                    media=media,
+                    text="⚠️ Generated, but Telegram cannot preview media here. Open bot chat to receive file.",
                     reply_markup=keyboard,
                 )
-                logger.info("Successfully updated inline message with document (URL-based)")
                 return
-            except TelegramError as doc_error:
-                logger.warning(f"InputMediaDocument with URL failed for inline: {doc_error}")
-                # Попытка B: InputMediaPhoto с URL
-                try:
-                    media = InputMediaPhoto(
-                        media=image_url,
-                        caption=caption,
-                    )
-                    await context.bot.edit_message_media(
+            
+            try:
+                # Скачиваем изображение
+                image_bytes = await wavespeed_client.download_image(image_url)
+                if not image_bytes:
+                    logger.warning("Failed to download image for sticker conversion")
+                    keyboard = create_keyboard()
+                    await context.bot.edit_message_text(
                         inline_message_id=query.inline_message_id,
-                        media=media,
+                        text="⚠️ Generated, but failed to download image. Try Regenerate.",
                         reply_markup=keyboard,
                     )
-                    logger.info("Successfully updated inline message with photo (URL-based)")
                     return
-                except TelegramError as photo_error:
-                    logger.warning(f"InputMediaPhoto with URL failed for inline: {photo_error}")
-                    # Попытка C: Fallback на текст с инструкцией
+                
+                # Конвертируем в WebP с альфа-каналом
+                webp_bytes = None
+                try:
+                    webp_bytes = convert_to_webp_rgba(image_bytes)
+                except Exception as webp_error:
+                    logger.warning(f"WebP conversion failed: {type(webp_error).__name__}")
+                    # Пробуем использовать PNG как есть (но это может не сработать для стикера)
+                    webp_bytes = image_bytes
+                
+                # Загружаем стикер во временный стикерсет и получаем file_id
+                try:
+                    user_id = query.from_user.id if query.from_user else None
+                    if not user_id:
+                        logger.warning("Cannot get user_id for sticker upload")
+                        keyboard = create_keyboard()
+                        await context.bot.edit_message_text(
+                            inline_message_id=query.inline_message_id,
+                            text="⚠️ Generated, but cannot upload sticker. Open bot chat to receive file.",
+                            reply_markup=keyboard,
+                        )
+                        return
+                    
+                    # Создаем уникальное имя стикерсета
+                    bot_username = context.bot.username
+                    if not bot_username:
+                        logger.warning("Bot username not available for sticker set name")
+                        keyboard = create_keyboard()
+                        await context.bot.edit_message_text(
+                            inline_message_id=query.inline_message_id,
+                            text="⚠️ Generated, but cannot upload sticker. Open bot chat to receive file.",
+                            reply_markup=keyboard,
+                        )
+                        return
+                    
+                    sticker_set_name = f"stixly_temp_{int(time.time())}_{user_id}_by_{bot_username}"
+                    
+                    # Создаем временный стикерсет
+                    sticker_file = InputFile(io.BytesIO(webp_bytes), filename="stixly.webp")
+                    await context.bot.create_new_sticker_set(
+                        user_id=user_id,
+                        name=sticker_set_name,
+                        title="STIXLY Generated",
+                        sticker=sticker_file,
+                        emoji="🎨"
+                    )
+                    
+                    # Получаем file_id стикера из стикерсета
+                    sticker_set = await context.bot.get_sticker_set(sticker_set_name)
+                    if not sticker_set.stickers:
+                        logger.error("Sticker set created but no stickers found")
+                        keyboard = create_keyboard()
+                        await context.bot.edit_message_text(
+                            inline_message_id=query.inline_message_id,
+                            text="⚠️ Generated, but failed to get sticker. Open bot chat to receive file.",
+                            reply_markup=keyboard,
+                        )
+                        return
+                    
+                    sticker_file_id = sticker_set.stickers[0].file_id
+                    
+                    # Создаем клавиатуру с информацией о стикере для MiniApp
+                    keyboard = create_keyboard(sticker_file_id=sticker_file_id)
+                    
+                    # Заменяем стикер на новый стикер
+                    # Используем прямой вызов API, так как InputMediaSticker не существует
+                    # В Telegram Bot API для стикеров нужно передать sticker как file_id
+                    await context.bot._request.post(
+                        "editMessageMedia",
+                        {
+                            "inline_message_id": query.inline_message_id,
+                            "media": {
+                                "type": "sticker",
+                                "sticker": sticker_file_id
+                            },
+                            "reply_markup": keyboard.to_dict() if keyboard else None
+                        }
+                    )
+                    logger.info("Successfully updated inline message with sticker")
+                    return
+                    
+                except TelegramError as sticker_error:
+                    logger.warning(f"Failed to upload/update sticker for inline: {sticker_error}")
+                    # Fallback на текст
                     fallback_buttons = []
                     try:
                         bot_username = context.bot.username
@@ -438,7 +525,6 @@ async def update_message_with_image(
                     except Exception:
                         pass
                     
-                    # Добавляем кнопку Regenerate
                     fallback_buttons.append([
                         InlineKeyboardButton(
                             "Regenerate",
@@ -454,6 +540,25 @@ async def update_message_with_image(
                         reply_markup=fallback_keyboard,
                     )
                     return
+                except Exception as upload_error:
+                    logger.error(f"Unexpected error uploading sticker: {upload_error}", exc_info=True)
+                    keyboard = create_keyboard()
+                    await context.bot.edit_message_text(
+                        inline_message_id=query.inline_message_id,
+                        text="⚠️ Generated, but failed to upload. Try Regenerate.",
+                        reply_markup=keyboard,
+                    )
+                    return
+                    
+            except Exception as conversion_error:
+                logger.warning(f"Error during sticker conversion: {conversion_error}", exc_info=True)
+                keyboard = create_keyboard()
+                await context.bot.edit_message_text(
+                    inline_message_id=query.inline_message_id,
+                    text="⚠️ Generated, but failed to process image. Try Regenerate.",
+                    reply_markup=keyboard,
+                )
+                return
         
         # Для обычных сообщений (chat_id) используем bytes для лучшего контроля
         wavespeed_client = context.bot_data.get("wavespeed_client")
@@ -473,6 +578,7 @@ async def update_message_with_image(
                                     io.BytesIO(png_bytes),
                                     filename="stixly.png",
                                 )
+                                keyboard = create_keyboard(image_url_param=image_url)
                                 await context.bot.send_document(
                                     chat_id=query.message.chat.id,
                                     document=png_file,
@@ -513,6 +619,9 @@ async def update_message_with_image(
                     caption=caption,
                 )
                 
+                # Создаем клавиатуру с URL изображения для MiniApp
+                keyboard = create_keyboard(image_url_param=image_url)
+                
                 try:
                     await query.message.edit_media(
                         media=media,
@@ -525,6 +634,7 @@ async def update_message_with_image(
                     # Для обычных сообщений: отправляем документ как новое сообщение
                     if query.message and query.message.chat:
                         try:
+                            keyboard = create_keyboard(image_url_param=image_url)
                             await context.bot.send_document(
                                 chat_id=query.message.chat.id,
                                 document=document_file,
@@ -546,6 +656,7 @@ async def update_message_with_image(
                             png_bytes = await wavespeed_client.download_image(image_url)
                             if png_bytes:
                                 png_file = InputFile(io.BytesIO(png_bytes), filename="stixly.png")
+                                keyboard = create_keyboard(image_url_param=image_url)
                                 await context.bot.send_document(
                                     chat_id=query.message.chat.id,
                                     document=png_file,
@@ -564,6 +675,9 @@ async def update_message_with_image(
             media=image_url,
             caption=caption,
         )
+        
+        # Создаем клавиатуру с URL изображения для MiniApp
+        keyboard = create_keyboard(image_url_param=image_url)
         
         if query.inline_message_id:
             await context.bot.edit_message_media(
@@ -600,6 +714,9 @@ async def update_message_with_image(
                     caption=caption,
                 )
                 
+                # Создаем клавиатуру с URL изображения для MiniApp
+                keyboard = create_keyboard(image_url_param=image_url)
+                
                 if query.inline_message_id:
                     await context.bot.edit_message_media(
                         inline_message_id=query.inline_message_id,
@@ -609,9 +726,9 @@ async def update_message_with_image(
                 else:
                     try:
                         await query.message.edit_media(
-                            media=media,
-                            reply_markup=keyboard,
-                        )
+                        media=media,
+                        reply_markup=keyboard,
+                    )
                     except TelegramError:
                         # Если редактирование не работает, отправляем новое сообщение
                         if query.message and query.message.chat:
