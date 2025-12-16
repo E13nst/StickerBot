@@ -13,7 +13,6 @@ from telegram.error import TelegramError
 from src.config.settings import (
     WAVESPEED_MAX_POLL_SECONDS,
     WAVESPEED_BG_REMOVE_ENABLED,
-    MINIAPP_GALLERY_URL,
 )
 from src.utils.image_postprocess import validate_alpha_channel, convert_to_webp_rgba
 
@@ -369,26 +368,9 @@ async def update_message_with_image(
 ) -> None:
     """Обновить сообщение с изображением (с fallback на upload)"""
     
-    def create_keyboard(sticker_file_id: Optional[str] = None, image_url_param: Optional[str] = None) -> InlineKeyboardMarkup:
-        """Создать клавиатуру с кнопками, передавая информацию о стикере в MiniApp"""
+    def create_keyboard() -> InlineKeyboardMarkup:
+        """Создать клавиатуру с кнопками"""
         buttons = []
-        
-        if MINIAPP_GALLERY_URL:
-            # Формируем URL для MiniApp с информацией о стикере
-            save_url = f"{MINIAPP_GALLERY_URL}?action=save&hash={prompt_hash}"
-            if sticker_file_id:
-                # Для inline сообщений передаем file_id стикера
-                save_url += f"&sticker_file_id={sticker_file_id}"
-            elif image_url_param:
-                # Для обычных сообщений передаем URL изображения
-                save_url += f"&image_url={image_url_param}"
-            
-            buttons.append([
-                InlineKeyboardButton(
-                    "Save to Stixly",
-                    url=save_url
-                )
-            ])
         
         buttons.append([
             InlineKeyboardButton(
@@ -489,8 +471,8 @@ async def update_message_with_image(
                     
                     sticker_file_id = sticker_set.stickers[0].file_id
                     
-                    # Создаем клавиатуру с информацией о стикере для MiniApp
-                    keyboard = create_keyboard(sticker_file_id=sticker_file_id)
+                    # Создаем клавиатуру
+                    keyboard = create_keyboard()
                     
                     # Заменяем стикер на новый стикер
                     # Используем прямой вызов API, так как InputMediaSticker не существует
@@ -578,7 +560,7 @@ async def update_message_with_image(
                                     io.BytesIO(png_bytes),
                                     filename="stixly.png",
                                 )
-                                keyboard = create_keyboard(image_url_param=image_url)
+                                keyboard = create_keyboard()
                                 await context.bot.send_document(
                                     chat_id=query.message.chat.id,
                                     document=png_file,
@@ -619,8 +601,8 @@ async def update_message_with_image(
                     caption=caption,
                 )
                 
-                # Создаем клавиатуру с URL изображения для MiniApp
-                keyboard = create_keyboard(image_url_param=image_url)
+                # Создаем клавиатуру
+                keyboard = create_keyboard()
                 
                 try:
                     await query.message.edit_media(
@@ -634,7 +616,7 @@ async def update_message_with_image(
                     # Для обычных сообщений: отправляем документ как новое сообщение
                     if query.message and query.message.chat:
                         try:
-                            keyboard = create_keyboard(image_url_param=image_url)
+                            keyboard = create_keyboard()
                             await context.bot.send_document(
                                 chat_id=query.message.chat.id,
                                 document=document_file,
@@ -656,7 +638,7 @@ async def update_message_with_image(
                             png_bytes = await wavespeed_client.download_image(image_url)
                             if png_bytes:
                                 png_file = InputFile(io.BytesIO(png_bytes), filename="stixly.png")
-                                keyboard = create_keyboard(image_url_param=image_url)
+                                keyboard = create_keyboard()
                                 await context.bot.send_document(
                                     chat_id=query.message.chat.id,
                                     document=png_file,
@@ -676,8 +658,8 @@ async def update_message_with_image(
             caption=caption,
         )
         
-        # Создаем клавиатуру с URL изображения для MiniApp
-        keyboard = create_keyboard(image_url_param=image_url)
+        # Создаем клавиатуру
+        keyboard = create_keyboard()
         
         if query.inline_message_id:
             await context.bot.edit_message_media(
@@ -714,8 +696,8 @@ async def update_message_with_image(
                     caption=caption,
                 )
                 
-                # Создаем клавиатуру с URL изображения для MiniApp
-                keyboard = create_keyboard(image_url_param=image_url)
+                # Создаем клавиатуру
+                keyboard = create_keyboard()
                 
                 if query.inline_message_id:
                     await context.bot.edit_message_media(
