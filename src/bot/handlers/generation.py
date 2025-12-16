@@ -391,6 +391,71 @@ async def update_message_with_image(
     # Если нужно конвертировать в WebP (только после успешного bg-remover)
     # ВАЖНО: Никогда не используем InputMediaPhoto для прозрачных изображений
     if should_convert_to_webp:
+        # Для inline_message_id используем URL напрямую (Telegram не поддерживает InputFile с bytes)
+        if query.inline_message_id:
+            # ВАЖНО: Не скачиваем изображение, используем URL напрямую
+            try:
+                # Попытка A: InputMediaDocument с URL (для прозрачного фона)
+                media = InputMediaDocument(
+                    media=image_url,  # URL вместо InputFile
+                    caption=caption,
+                )
+                await context.bot.edit_message_media(
+                    inline_message_id=query.inline_message_id,
+                    media=media,
+                    reply_markup=keyboard,
+                )
+                logger.info("Successfully updated inline message with document (URL-based)")
+                return
+            except TelegramError as doc_error:
+                logger.warning(f"InputMediaDocument with URL failed for inline: {doc_error}")
+                # Попытка B: InputMediaPhoto с URL
+                try:
+                    media = InputMediaPhoto(
+                        media=image_url,
+                        caption=caption,
+                    )
+                    await context.bot.edit_message_media(
+                        inline_message_id=query.inline_message_id,
+                        media=media,
+                        reply_markup=keyboard,
+                    )
+                    logger.info("Successfully updated inline message with photo (URL-based)")
+                    return
+                except TelegramError as photo_error:
+                    logger.warning(f"InputMediaPhoto with URL failed for inline: {photo_error}")
+                    # Попытка C: Fallback на текст с инструкцией
+                    fallback_buttons = []
+                    try:
+                        bot_username = context.bot.username
+                        if bot_username:
+                            fallback_buttons.append([
+                                InlineKeyboardButton(
+                                    "Open in bot",
+                                    url=f"https://t.me/{bot_username}"
+                                )
+                            ])
+                    except Exception:
+                        pass
+                    
+                    # Добавляем кнопку Regenerate
+                    fallback_buttons.append([
+                        InlineKeyboardButton(
+                            "Regenerate",
+                            callback_data=f"regen:{prompt_hash}"
+                        )
+                    ])
+                    
+                    fallback_keyboard = InlineKeyboardMarkup(fallback_buttons)
+                    
+                    await context.bot.edit_message_text(
+                        inline_message_id=query.inline_message_id,
+                        text="⚠️ Generated, but Telegram cannot preview media here. Open bot chat to receive file.",
+                        reply_markup=fallback_keyboard,
+                    )
+                    return
+        
+        # Для обычных сообщений (chat_id) используем bytes для лучшего контроля
         wavespeed_client = context.bot_data.get("wavespeed_client")
         if wavespeed_client:
             try:
@@ -398,14 +463,8 @@ async def update_message_with_image(
                 image_bytes = await wavespeed_client.download_image(image_url)
                 if not image_bytes:
                     logger.warning("Failed to download image for WebP conversion")
-                    # Fallback на текст для inline, send_document для обычных сообщений
-                    if query.inline_message_id:
-                        await context.bot.edit_message_text(
-                            inline_message_id=query.inline_message_id,
-                            text="✅ Generated (transparent file)",
-                            reply_markup=keyboard,
-                        )
-                    elif query.message and query.message.chat:
+                    # Fallback для обычных сообщений
+                    if query.message and query.message.chat:
                         # Пробуем еще раз скачать и отправить PNG как документ
                         try:
                             png_bytes = await wavespeed_client.download_image(image_url)
@@ -455,81 +514,16 @@ async def update_message_with_image(
                 )
                 
                 try:
-                    if query.inline_message_id:
-                        await context.bot.edit_message_media(
-                            inline_message_id=query.inline_message_id,
-                            media=media,
-                            reply_markup=keyboard,
-                        )
-                    else:
-                        await query.message.edit_media(
-                            media=media,
-                            reply_markup=keyboard,
-                        )
+                    await query.message.edit_media(
+                        media=media,
+                        reply_markup=keyboard,
+                    )
                     logger.info(f"Successfully updated message with {document_filename} document")
                     return
                 except TelegramError as edit_error:
-                    # Если редактирование не работает
-                    logger.warning("edit_message_media document failed for inline: %s", repr(edit_error))
-                    
-                    if query.inline_message_id:
-                        # Попытка B: fallback на InputMediaPhoto с bytes (не URL!)
-                        try:
-                            # Используем те же bytes (webp_bytes или image_bytes) как InputFile
-                            photo_bytes = webp_bytes if webp_bytes else image_bytes
-                            photo_file = InputFile(io.BytesIO(photo_bytes), filename="stixly.webp" if webp_bytes else "stixly.png")
-                            
-                            # Короткий caption или пустой для "sticker-like" вида
-                            short_caption = "" if caption == "✅ Generated by STIXLY" else "Generated by STIXLY"
-                            
-                            photo_media = InputMediaPhoto(
-                                media=photo_file,
-                                caption=short_caption,
-                            )
-                            
-                            await context.bot.edit_message_media(
-                                inline_message_id=query.inline_message_id,
-                                media=photo_media,
-                                reply_markup=keyboard,
-                            )
-                            logger.info("Successfully updated inline message with photo fallback (bytes-based)")
-                            return
-                        except TelegramError as photo_error:
-                            # Попытка C: last resort - текст с инструкцией
-                            logger.warning("edit_message_media photo fallback failed for inline: %s", repr(photo_error))
-                            
-                            # Создаем кнопку "Open in bot" если возможно
-                            fallback_buttons = []
-                            try:
-                                bot_username = context.bot.username
-                                if bot_username:
-                                    fallback_buttons.append([
-                                        InlineKeyboardButton(
-                                            "Open in bot",
-                                            url=f"https://t.me/{bot_username}"
-                                        )
-                                    ])
-                            except Exception:
-                                pass
-                            
-                            # Добавляем кнопку Regenerate
-                            fallback_buttons.append([
-                                InlineKeyboardButton(
-                                    "Regenerate",
-                                    callback_data=f"regen:{prompt_hash}"
-                                )
-                            ])
-                            
-                            fallback_keyboard = InlineKeyboardMarkup(fallback_buttons)
-                            
-                            await context.bot.edit_message_text(
-                                inline_message_id=query.inline_message_id,
-                                text="⚠️ Generated, but Telegram cannot preview media here. Open bot chat to receive file.",
-                                reply_markup=fallback_keyboard,
-                            )
-                            return
-                    elif query.message and query.message.chat:
-                        # Для обычных сообщений: отправляем документ как новое сообщение
+                    logger.warning("edit_message_media document failed: %s", repr(edit_error))
+                    # Для обычных сообщений: отправляем документ как новое сообщение
+                    if query.message and query.message.chat:
                         try:
                             await context.bot.send_document(
                                 chat_id=query.message.chat.id,
@@ -540,58 +534,12 @@ async def update_message_with_image(
                             return
                         except Exception as send_error:
                             logger.warning(f"Failed to send document: {type(send_error).__name__}")
-                    # Если ничего не получилось, просто возвращаемся (не fallback на Photo)
                     return
                     
             except Exception as conversion_error:
                 logger.warning("Error during document conversion: %s", repr(conversion_error))
-                # Fallback для inline: пробуем photo с bytes, затем текст
-                if query.inline_message_id:
-                    try:
-                        # Пробуем скачать и отправить как photo с bytes
-                        png_bytes = await wavespeed_client.download_image(image_url)
-                        if png_bytes:
-                            photo_file = InputFile(io.BytesIO(png_bytes), filename="stixly.png")
-                            photo_media = InputMediaPhoto(
-                                media=photo_file,
-                                caption="",
-                            )
-                            await context.bot.edit_message_media(
-                                inline_message_id=query.inline_message_id,
-                                media=photo_media,
-                                reply_markup=keyboard,
-                            )
-                            return
-                    except Exception as photo_fallback_error:
-                        logger.warning("Photo fallback failed for inline: %s", repr(photo_fallback_error))
-                    
-                    # Last resort: текст
-                    try:
-                        bot_username = context.bot.username
-                        fallback_buttons = []
-                        if bot_username:
-                            fallback_buttons.append([
-                                InlineKeyboardButton(
-                                    "Open in bot",
-                                    url=f"https://t.me/{bot_username}"
-                                )
-                            ])
-                        fallback_buttons.append([
-                            InlineKeyboardButton(
-                                "Regenerate",
-                                callback_data=f"regen:{prompt_hash}"
-                            )
-                        ])
-                        fallback_keyboard = InlineKeyboardMarkup(fallback_buttons)
-                        
-                        await context.bot.edit_message_text(
-                            inline_message_id=query.inline_message_id,
-                            text="⚠️ Generated, but Telegram cannot preview media here. Open bot chat to receive file.",
-                            reply_markup=fallback_keyboard,
-                        )
-                    except Exception:
-                        pass
-                elif query.message and query.message.chat:
+                # Fallback для обычных сообщений
+                if query.message and query.message.chat:
                     try:
                         wavespeed_client = context.bot_data.get("wavespeed_client")
                         if wavespeed_client:
