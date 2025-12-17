@@ -219,10 +219,26 @@ async def handle_emoji_for_add_existing(
         )
         return await show_existing_sets(update, context, page=user_data.get('existing_page', 0), gallery_service=gallery_service)
 
+    # Извлекаем имя стикерсета - может быть в поле 'name' или извлечено из URL
+    sticker_set_name = selected.get('name')
+    if not sticker_set_name:
+        # Пытаемся извлечь из URL
+        url = selected.get('url', '')
+        if url and '/addstickers/' in url:
+            sticker_set_name = url.split('/addstickers/')[-1]
+        else:
+            logger.error(f"Не удалось определить имя стикерсета из данных: {selected}")
+            await update.message.reply_text(
+                "Не удалось определить имя стикерсета. Попробуй выбрать набор снова."
+            )
+            return await show_existing_sets(update, context, page=user_data.get('existing_page', 0), gallery_service=gallery_service)
+
+    logger.info(f"Добавление стикера в набор: name={sticker_set_name}, user_id={update.effective_user.id}, emoji={emoji}")
+
     success = await asyncio.to_thread(
         sticker_service.add_sticker_to_set,
         user_id=update.effective_user.id,
-        name=selected.get('name'),
+        name=sticker_set_name,
         png_sticker=user_data.get('current_webp'),
         emojis=emoji
     )

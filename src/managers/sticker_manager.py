@@ -77,8 +77,17 @@ class StickerManager:
         try:
             url = f"{self.base_url}/addStickerToSet"
 
+            # Определяем MIME-тип по содержимому файла
+            # WebP файлы начинаются с RIFF...WEBP
+            if png_sticker.startswith(b'RIFF') and b'WEBP' in png_sticker[:12]:
+                mime_type = 'image/webp'
+                file_name = 'sticker.webp'
+            else:
+                mime_type = 'image/png'
+                file_name = 'sticker.png'
+
             files = {
-                'png_sticker': ('sticker.png', png_sticker, 'image/png')
+                'png_sticker': (file_name, png_sticker, mime_type)
             }
 
             data = {
@@ -87,12 +96,19 @@ class StickerManager:
                 'emojis': emojis
             }
 
+            logger.debug(f"Отправка запроса addStickerToSet: name={name}, user_id={user_id}, emojis={emojis}, file_size={len(png_sticker)}")
+
             response = requests.post(url, data=data, files=files, timeout=30)
             result = response.json()
+
+            if not result.get('ok', False):
+                logger.error(f"Ошибка добавления стикера в набор {name}: {result.get('description', 'Unknown error')}")
+            else:
+                logger.info(f"Стикер успешно добавлен в набор {name}")
 
             return result.get('ok', False)
 
         except Exception as e:
-            logger.error(f"Ошибка добавления стикера: {e}")
+            logger.error(f"Ошибка добавления стикера: {e}", exc_info=True)
             return False
 
