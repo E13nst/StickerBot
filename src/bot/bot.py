@@ -48,6 +48,9 @@ from src.config.settings import (
     PLACEHOLDER_STICKER_FILE_ID,
     PLACEHOLDER_STICKER_PATH,
     ADMIN_IDS,
+    STICKERSET_CACHE_SIZE,
+    STICKERSET_CACHE_TTL_DAYS,
+    STICKERSET_CACHE_CLEANUP_INTERVAL_HOURS,
 )
 from src.services.sticker_service import StickerService
 from src.services.image_service import ImageService
@@ -106,6 +109,7 @@ from src.utils.quota import (
     Plan,
     QuotaConfig,
 )
+from src.utils.stickerset_cache import AsyncStickerSetCache
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -160,6 +164,14 @@ class StickerBot:
             # #region agent log
             _debug_log("bot/bot.py:__init__:after_gallery_service", "GalleryService создан", {}, "J")
             # #endregion
+            
+            # Инициализация кэша стикерсетов
+            self.stickerset_cache = AsyncStickerSetCache(
+                max_size=STICKERSET_CACHE_SIZE,
+                ttl_days=STICKERSET_CACHE_TTL_DAYS,
+                cleanup_interval_hours=STICKERSET_CACHE_CLEANUP_INTERVAL_HOURS
+            )
+            logger.info("StickerSet cache initialized")
 
             # Инициализация компонентов для WaveSpeed generation
             # #region agent log
@@ -400,27 +412,27 @@ class StickerBot:
 
         async def wrapped_handle_sticker_for_add_pack(update, context):
             return await handle_sticker_for_add_pack(
-                update, context, self.gallery_service, self.sticker_service
+                update, context, self.gallery_service, self.sticker_service, self.stickerset_cache
             )
 
         async def wrapped_handle_sticker_in_main_menu(update, context):
             """Обработчик стикеров в главном меню"""
             return await handle_sticker_for_add_pack(
-                update, context, self.gallery_service, self.sticker_service
+                update, context, self.gallery_service, self.sticker_service, self.stickerset_cache
             )
 
         async def wrapped_handle_sticker_before_start(update, context):
             """Обработчик стикеров до начала диалога (/start)"""
             # Обрабатываем стикер так же, как в главном меню
             result = await handle_sticker_for_add_pack(
-                update, context, self.gallery_service, self.sticker_service
+                update, context, self.gallery_service, self.sticker_service, self.stickerset_cache
             )
             return result
 
         async def wrapped_handle_add_to_gallery(update, context):
             logger.info(f"wrapped_handle_add_to_gallery called with callback_data: {update.callback_query.data if update.callback_query else 'None'}")
             return await handle_add_to_gallery(
-                update, context, self.gallery_service
+                update, context, self.gallery_service, self.stickerset_cache
             )
 
         async def wrapped_handle_inline_query(update, context):
@@ -676,6 +688,10 @@ class StickerBot:
                     f"PLACEHOLDER_STICKER_PATH points to a valid file: {PLACEHOLDER_STICKER_PATH}"
                 )
             
+            # Запускаем фоновую задачу очистки кэша
+            await self.stickerset_cache.start_cleanup_task()
+            logger.info("Sticker set cache cleanup task started")
+            
             # Удаляем webhook перед запуском polling
             logger.info("Удаление webhook перед запуском polling...")
             await self.application.bot.delete_webhook(drop_pending_updates=True)
@@ -720,6 +736,10 @@ class StickerBot:
                     "To fix: set PLACEHOLDER_STICKER_FILE_ID in .env or ensure "
                     f"PLACEHOLDER_STICKER_PATH points to a valid file: {PLACEHOLDER_STICKER_PATH}"
                 )
+            
+            # Запускаем фоновую задачу очистки кэша
+            await self.stickerset_cache.start_cleanup_task()
+            logger.info("Sticker set cache cleanup task started")
             
             # Устанавливаем экземпляр бота в webhook endpoint после инициализации
             # чтобы гарантировать, что application полностью готов
@@ -816,6 +836,14 @@ class StickerBot:
     async def _shutdown(self):
         """Внутренний метод для завершения работы бота"""
         try:
+            # Останавливаем фоновую задачу кэша
+            if self.stickerset_cache:
+                try:
+                    await self.stickerset_cache.stop_cleanup_task()
+                    logger.info("Sticker set cache cleanup task stopped")
+                except Exception as e:
+                    logger.warning(f"Error stopping cache cleanup task: {e}")
+            
             # Закрываем WaveSpeedClient если есть
             if self.wavespeed_client:
                 try:
