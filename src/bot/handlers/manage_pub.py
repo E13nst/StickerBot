@@ -16,16 +16,19 @@ from src.config.settings import GALLERY_DEFAULT_LANGUAGE
 logger = logging.getLogger(__name__)
 
 
-async def manage_publication(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+async def manage_publication(update: Update, context: ContextTypes.DEFAULT_TYPE, gallery_service) -> int:
     """Управление публикацией наборов"""
-    await update.message.reply_text(
-        "Выбираем набор для изменения статуса публикации:",
-        reply_markup=ReplyKeyboardRemove()
-    )
+    if update.message:
+        await update.message.reply_text(
+            "Выбираем набор для изменения статуса публикации:",
+            reply_markup=ReplyKeyboardRemove()
+        )
+    elif update.callback_query:
+        await update.callback_query.answer()
 
     context.user_data.clear()
     context.user_data['action'] = 'manage_publication'
-    return await show_manage_sets(update, context, page=0, gallery_service=None)
+    return await show_manage_sets(update, context, page=0, gallery_service=gallery_service)
 
 
 async def show_manage_sets(

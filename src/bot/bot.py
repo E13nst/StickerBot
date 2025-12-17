@@ -306,7 +306,7 @@ class StickerBot:
             return await add_to_existing(update, context, self.gallery_service)
 
         async def wrapped_manage_publication(update, context):
-            return await manage_publication(update, context)
+            return await manage_publication(update, context, self.gallery_service)
 
         async def wrapped_handle_new_set_title(update, context):
             return await handle_new_set_title(update, context)
