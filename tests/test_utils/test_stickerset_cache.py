@@ -261,3 +261,4 @@ async def test_cache_concurrent_access():
     assert stats['size'] == 10
     assert stats['hits'] == 10
 
+

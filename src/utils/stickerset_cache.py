@@ -278,3 +278,4 @@ class AsyncStickerSetCache:
             self._evictions = 0
             logger.info("Cache cleared")
 
+
