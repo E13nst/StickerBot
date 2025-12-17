@@ -199,7 +199,7 @@ async def handle_manage_choice(
         return WAITING_MANAGE_CHOICE
 
     if data.startswith('manage:set:'):
-        index = int(data.split(':', 1)[1])
+        index = int(data.rsplit(':', 1)[1])
         sets = user_data.get('manage_sets', [])
         if 0 <= index < len(sets):
             target_set = sets[index]
