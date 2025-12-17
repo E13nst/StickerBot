@@ -469,14 +469,14 @@ class StickerBot:
                     MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_handle_new_set_title)
                 ],
                 WAITING_STICKER: [
-                    MessageHandler(filters.PHOTO | filters.Document.ALL, wrapped_handle_sticker)
+                    MessageHandler(filters.PHOTO | filters.Document.ALL | filters.Sticker.ALL, wrapped_handle_sticker)
                 ],
                 WAITING_EMOJI: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_handle_emoji)
                 ],
                 WAITING_DECISION: [
                     MessageHandler(filters.Regex('^(Готово|Завершить набор)$'), wrapped_finish_sticker_collection),
-                    MessageHandler(filters.PHOTO | filters.Document.ALL, wrapped_handle_sticker),
+                    MessageHandler(filters.PHOTO | filters.Document.ALL | filters.Sticker.ALL, wrapped_handle_sticker),
                     MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_prompt_waiting_for_more)
                 ],
                 WAITING_SHORT_NAME: [

@@ -27,6 +27,9 @@ async def handle_sticker(
             photo_file = await update.message.photo[-1].get_file()
         elif update.message and update.message.document:
             photo_file = await update.message.document.get_file()
+        elif update.message and update.message.sticker:
+            # Обработка стикера
+            photo_file = await update.message.sticker.get_file()
         else:
             await update.message.reply_text("Пришли, пожалуйста, изображение.")
             return WAITING_STICKER
