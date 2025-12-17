@@ -570,11 +570,19 @@ class StickerBot:
         
         # Загружаем файл в Telegram
         sticker_path = Path(PLACEHOLDER_STICKER_PATH)
-        logger.info(f"Checking placeholder sticker file at: {sticker_path}")
+        # Если путь относительный, делаем его абсолютным относительно текущей рабочей директории
+        if not sticker_path.is_absolute():
+            sticker_path = sticker_path.resolve()
+        logger.info(f"Loading placeholder sticker from: {sticker_path}")
         logger.info(f"Absolute path: {sticker_path.absolute()}")
         
         if not sticker_path.exists():
-            logger.warning(f"Placeholder sticker file not found: {sticker_path}. Absolute path: {sticker_path.absolute()}")
+            logger.warning(f"Placeholder sticker file not found: {sticker_path}")
+            logger.info("Expected file: static/stixly_ai.webp in project root")
+            logger.info("You can either:")
+            logger.info("1. Ensure the file exists at the expected path")
+            logger.info("2. Set PLACEHOLDER_STICKER_PATH in .env to point to your sticker file")
+            logger.info("3. Set PLACEHOLDER_STICKER_FILE_ID in .env with a valid sticker file_id")
             self.application.bot_data["placeholder_sticker_file_id"] = None
             return
         
@@ -653,9 +661,10 @@ class StickerBot:
         except FileNotFoundError as file_error:
             logger.error(
                 f"Placeholder sticker file not found: {file_error}. "
-                f"Expected path: {PLACEHOLDER_STICKER_PATH}. "
-                "Set PLACEHOLDER_STICKER_FILE_ID manually or ensure the file exists."
+                f"Expected path: {PLACEHOLDER_STICKER_PATH}"
             )
+            logger.info("Default path: static/stixly_ai.webp in project root")
+            logger.info("Set PLACEHOLDER_STICKER_FILE_ID in .env or ensure the file exists at the expected path")
             self.application.bot_data["placeholder_sticker_file_id"] = None
         except PermissionError as perm_error:
             logger.error(

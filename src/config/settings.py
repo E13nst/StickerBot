@@ -1,7 +1,11 @@
 import os
+from pathlib import Path
 from dotenv import load_dotenv
 
 load_dotenv()
+
+# Определяем корень проекта (3 уровня выше от src/config/settings.py)
+PROJECT_ROOT = Path(__file__).parent.parent.parent
 
 BOT_TOKEN = os.getenv('BOT_TOKEN')
 ADMIN_IDS = list(map(int, os.getenv('ADMIN_IDS', '').split(','))) if os.getenv('ADMIN_IDS') else []
@@ -46,7 +50,9 @@ QUOTA_TIMEZONE = os.getenv('QUOTA_TIMEZONE', 'UTC')
 
 # Placeholder sticker для inline query
 PLACEHOLDER_STICKER_FILE_ID = os.getenv('PLACEHOLDER_STICKER_FILE_ID')
-PLACEHOLDER_STICKER_PATH = os.getenv('PLACEHOLDER_STICKER_PATH', 'test_output/trump_cigar.webp')
+# По умолчанию используем файл из static/ относительно корня проекта
+_default_placeholder_path = str(PROJECT_ROOT / 'static' / 'stixly_ai.webp')
+PLACEHOLDER_STICKER_PATH = os.getenv('PLACEHOLDER_STICKER_PATH', _default_placeholder_path)
 
 # Sticker set cache settings
 STICKERSET_CACHE_SIZE = int(os.getenv('STICKERSET_CACHE_SIZE', '5000'))
