@@ -423,6 +423,18 @@ class StickerBot:
 
         async def wrapped_handle_sticker_before_start(update, context):
             """Обработчик стикеров до начала диалога (/start)"""
+            user_data = context.user_data
+            
+            # Не обрабатываем стикеры, если пользователь в процессе создания или обновления стикерпака
+            action = user_data.get('action')
+            if action in ('create_new', 'add_existing'):
+                # Пропускаем обработку, пусть ConversationHandler обработает
+                return -1
+            
+            # Также проверяем, есть ли признаки активного процесса
+            if user_data.get('selected_set') or user_data.get('current_webp'):
+                return -1
+            
             # Обрабатываем стикер так же, как в главном меню
             result = await handle_sticker_for_add_pack(
                 update, context, self.gallery_service, self.sticker_service, self.stickerset_cache
