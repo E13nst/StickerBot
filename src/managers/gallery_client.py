@@ -110,6 +110,7 @@ class GalleryClient:
             url = f"{self.base_url}/internal/stickersets"
             params = {
                 'userId': user_id,
+                'authorId': user_id,
                 'language': language or self.default_language,
             }
 
