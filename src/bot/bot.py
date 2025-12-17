@@ -432,7 +432,11 @@ class StickerBot:
                 return -1
             
             # Также проверяем, есть ли признаки активного процесса
-            if user_data.get('selected_set') or user_data.get('current_webp'):
+            # Для создания нового набора
+            if user_data.get('stickers') or user_data.get('title'):
+                return -1
+            # Для добавления в существующий набор
+            if user_data.get('selected_set') or user_data.get('existing_sets') or user_data.get('current_webp'):
                 return -1
             
             # Обрабатываем стикер так же, как в главном меню
@@ -506,16 +510,17 @@ class StickerBot:
             allow_reentry=True
         )
 
+        # Сначала добавляем ConversationHandler, чтобы он получал стикеры первым
+        self.application.add_handler(conv_handler)
+        
         # Добавляем обработчик стикеров для нулевого состояния (до /start)
-        # Этот обработчик должен быть добавлен ПЕРЕД ConversationHandler,
-        # чтобы перехватывать стикеры до начала диалога
+        # Этот обработчик добавляется ПОСЛЕ ConversationHandler, чтобы ConversationHandler
+        # получал стикеры первым, когда пользователь в активном диалоге
         sticker_handler_before_start = MessageHandler(
             filters.Sticker.ALL,
             wrapped_handle_sticker_before_start
         )
         self.application.add_handler(sticker_handler_before_start)
-
-        self.application.add_handler(conv_handler)
         
         # Обработчик кнопки "Добавить в галерею" на уровне application,
         # чтобы он срабатывал независимо от состояния ConversationHandler
