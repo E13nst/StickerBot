@@ -10,7 +10,8 @@
     WAITING_PUBLISH_DECISION,
     WAITING_MANAGE_CHOICE,
     WAITING_STICKER_PACK_LINK,
-) = range(10)
+    SUPPORT_MODE,
+) = range(11)
 
 PAGE_PREV_LABEL = '⬅️ Назад'
 PAGE_NEXT_LABEL = '➡️ Вперед'

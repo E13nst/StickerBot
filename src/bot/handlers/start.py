@@ -27,6 +27,12 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
         ],
         [
             InlineKeyboardButton(
+                "📞 Поддержка",
+                callback_data="enter_support",
+            )
+        ],
+        [
+            InlineKeyboardButton(
                 "📢 Telegram-канал",
                 url="https://t.me/stixlyofficial",
             )
@@ -52,6 +58,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "ART — это внутренняя валюта за вклад в Stixly.\n"
         "Зарабатывай ART и продвигайся по турнирной таблице.\n\n"
         "<b>Начни сейчас, отправив любой стикер и заработай ART!</b>\n\n"
+        "❓ Помощь: /help | 📞 Поддержка: /support\n"
     )
 
     await update.message.reply_text(text, reply_markup=main_menu_keyboard(), parse_mode='HTML')
@@ -162,6 +169,7 @@ async def handle_back_to_main(update: Update, context: ContextTypes.DEFAULT_TYPE
         "ART — это внутренняя валюта за вклад в Stixly.\n"
         "Зарабатывай ART и продвигайся по турнирной таблице.\n\n"
         "<b>Начни сейчас, отправив любой стикер и заработай ART!</b>\n\n"
+        "❓ Помощь: /help | 📞 Поддержка: /support\n"
     )
     
     try:

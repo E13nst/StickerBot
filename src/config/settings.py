@@ -59,3 +59,8 @@ STICKERSET_CACHE_SIZE = int(os.getenv('STICKERSET_CACHE_SIZE', '5000'))
 STICKERSET_CACHE_TTL_DAYS = int(os.getenv('STICKERSET_CACHE_TTL_DAYS', '7'))
 STICKERSET_CACHE_CLEANUP_INTERVAL_HOURS = int(os.getenv('STICKERSET_CACHE_CLEANUP_INTERVAL_HOURS', '1'))
 
+# Настройки поддержки
+SUPPORT_CHAT_ID = os.getenv('SUPPORT_CHAT_ID')  # ID группы поддержки
+SUPPORT_ENABLED = os.getenv('SUPPORT_ENABLED', 'true').lower() == 'true'
+SUPPORT_USE_TOPICS = os.getenv('SUPPORT_USE_TOPICS', 'true').lower() == 'true'
+

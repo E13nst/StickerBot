@@ -79,3 +79,6 @@ def test_build_generate_result_with_empty_placeholder_file_id_returns_article(mo
     assert result is not None
     assert isinstance(result, InlineQueryResultArticle), "Should return InlineQueryResultArticle when placeholder_file_id is empty"
 
+
+
+

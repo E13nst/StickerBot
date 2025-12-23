@@ -51,6 +51,8 @@ from src.config.settings import (
     STICKERSET_CACHE_SIZE,
     STICKERSET_CACHE_TTL_DAYS,
     STICKERSET_CACHE_CLEANUP_INTERVAL_HOURS,
+    SUPPORT_CHAT_ID,
+    SUPPORT_ENABLED,
 )
 from src.services.sticker_service import StickerService
 from src.services.image_service import ImageService
@@ -66,6 +68,7 @@ from src.bot.states import (
     WAITING_PUBLISH_DECISION,
     WAITING_MANAGE_CHOICE,
     WAITING_STICKER_PACK_LINK,
+    SUPPORT_MODE,
 )
 from src.bot.handlers.start import start, handle_manage_stickers_menu, handle_back_to_main
 from src.bot.handlers.create_set import (
@@ -97,6 +100,8 @@ from src.bot.handlers.common import cancel, error_handler
 from src.bot.handlers.add_pack_from_sticker import handle_sticker_for_add_pack, handle_add_to_gallery
 from src.bot.handlers.inline import handle_inline_query
 from src.bot.handlers.generation import handle_generate_callback, handle_regenerate_callback
+from src.bot.handlers.support import enter_support_mode, exit_support_mode, forward_to_support, forward_to_user
+from src.bot.handlers.help import help_command
 
 # Импорты для WaveSpeed generation
 from src.managers.wavespeed_client import WaveSpeedClient
@@ -456,6 +461,16 @@ class StickerBot:
                 update, context, self.gallery_service
             )
 
+        # Обработчики поддержки
+        async def wrapped_enter_support(update, context):
+            return await enter_support_mode(update, context)
+
+        async def wrapped_exit_support(update, context):
+            return await exit_support_mode(update, context)
+
+        async def wrapped_forward_to_support(update, context):
+            return await forward_to_support(update, context)
+
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler('start', wrapped_start)],
             states={
@@ -468,6 +483,7 @@ class StickerBot:
                     CallbackQueryHandler(wrapped_handle_manage_stickers_menu, pattern='^manage_stickers_menu$'),
                     CallbackQueryHandler(wrapped_handle_back_to_main, pattern='^back_to_main$'),
                     CallbackQueryHandler(wrapped_handle_manage_callback, pattern='^manage:(create_new|add_existing|publication)$'),
+                    CallbackQueryHandler(wrapped_enter_support, pattern='^enter_support$'),
                 ],
                 WAITING_NEW_TITLE: [
                     MessageHandler(filters.TEXT & ~filters.COMMAND, wrapped_handle_new_set_title)
@@ -500,6 +516,14 @@ class StickerBot:
                 ],
                 WAITING_STICKER_PACK_LINK: [
                     MessageHandler(filters.Sticker.ALL, wrapped_handle_sticker_for_add_pack),
+                ],
+                SUPPORT_MODE: [
+                    MessageHandler(
+                        filters.TEXT | filters.PHOTO | filters.Document.ALL | 
+                        filters.VOICE | filters.VIDEO | filters.Sticker.ALL,
+                        wrapped_forward_to_support
+                    ),
+                    CallbackQueryHandler(wrapped_exit_support, pattern='^exit_support$'),
                 ],
             },
             fallbacks=[
@@ -546,6 +570,27 @@ class StickerBot:
                 pattern='^regen:'
             )
             self.application.add_handler(regen_handler)
+        
+        # Обработчики поддержки (вне ConversationHandler)
+        # Команда /help (доступна всегда)
+        self.application.add_handler(CommandHandler("help", help_command))
+        
+        # Команда /support (быстрый вход в режим поддержки)
+        self.application.add_handler(CommandHandler("support", wrapped_enter_support))
+        
+        # Обработчик ответов из чата поддержки
+        if SUPPORT_ENABLED and SUPPORT_CHAT_ID:
+            try:
+                support_chat_id_int = int(SUPPORT_CHAT_ID)
+                self.application.add_handler(
+                    MessageHandler(
+                        filters.Chat(support_chat_id_int) & filters.REPLY,
+                        forward_to_user
+                    )
+                )
+                logger.info(f"Обработчик ответов поддержки добавлен для чата {SUPPORT_CHAT_ID}")
+            except (ValueError, TypeError) as e:
+                logger.warning(f"Не удалось добавить обработчик поддержки: SUPPORT_CHAT_ID='{SUPPORT_CHAT_ID}' не является валидным числом. Ошибка: {e}")
         
         self.application.add_error_handler(error_handler)
 
