@@ -249,3 +249,5 @@ STICKERSET_CACHE_CLEANUP_INTERVAL_HOURS=1
 **Статус**: ✅ Готово к production
 
 
+
+
