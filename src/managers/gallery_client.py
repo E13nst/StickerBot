@@ -101,6 +101,7 @@ class GalleryClient:
         title: Optional[str] = None,
         visibility: str = "PRIVATE",
         language: Optional[str] = None,
+        author_id: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         if not self.is_configured():
             logger.warning("Gallery client is not configured. Skipping sticker set registration.")
@@ -110,15 +111,21 @@ class GalleryClient:
             url = f"{self.base_url}/internal/stickersets"
             params = {
                 'userId': user_id,
-                'authorId': user_id,
                 'language': language or self.default_language,
             }
+            
+            # Добавляем authorId в params только если он передан
+            if author_id is not None:
+                params['authorId'] = author_id
 
             payload: Dict[str, Any] = {
                 'name': sticker_set_link,
                 'visibility': visibility,
-                'authorId': user_id,
             }
+            
+            # Добавляем authorId в payload только если он передан
+            if author_id is not None:
+                payload['authorId'] = author_id
 
             if sticker_set_id is not None:
                 payload['stickerSetId'] = sticker_set_id

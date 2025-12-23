@@ -215,6 +215,7 @@ async def handle_short_name(
             title=title,
             visibility="PRIVATE",
             language=GALLERY_DEFAULT_LANGUAGE,
+            author_id=update.effective_user.id,
         )
 
         if not gallery_record:

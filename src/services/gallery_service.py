@@ -41,6 +41,7 @@ class GalleryService:
         title: Optional[str] = None,
         visibility: str = "PRIVATE",
         language: Optional[str] = None,
+        author_id: Optional[int] = None,
     ) -> Optional[Dict[str, Any]]:
         """Сохраняет стикерсет в галерею"""
         return self.client.save_sticker_set(
@@ -50,6 +51,7 @@ class GalleryService:
             title=title,
             visibility=visibility,
             language=language,
+            author_id=author_id,
         )
     
     def publish_sticker_set(
