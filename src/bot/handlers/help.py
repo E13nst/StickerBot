@@ -73,3 +73,7 @@ async def help_command(update: Update, context: ContextTypes.DEFAULT_TYPE) -> No
     except Exception as e:
         logger.error(f"Ошибка отправки справки: {e}")
 
+
+
+
+

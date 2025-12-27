@@ -11,7 +11,8 @@
     WAITING_MANAGE_CHOICE,
     WAITING_STICKER_PACK_LINK,
     SUPPORT_MODE,
-) = range(11)
+    CHOOSING_SUPPORT_TOPIC,
+) = range(12)
 
 PAGE_PREV_LABEL = '⬅️ Назад'
 PAGE_NEXT_LABEL = '➡️ Вперед'

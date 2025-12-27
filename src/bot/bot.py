@@ -69,6 +69,7 @@ from src.bot.states import (
     WAITING_MANAGE_CHOICE,
     WAITING_STICKER_PACK_LINK,
     SUPPORT_MODE,
+    CHOOSING_SUPPORT_TOPIC,
 )
 from src.bot.handlers.start import start, handle_manage_stickers_menu, handle_back_to_main
 from src.bot.handlers.create_set import (
@@ -100,7 +101,7 @@ from src.bot.handlers.common import cancel, error_handler
 from src.bot.handlers.add_pack_from_sticker import handle_sticker_for_add_pack, handle_add_to_gallery
 from src.bot.handlers.inline import handle_inline_query
 from src.bot.handlers.generation import handle_generate_callback, handle_regenerate_callback
-from src.bot.handlers.support import enter_support_mode, exit_support_mode, forward_to_support, forward_to_user
+from src.bot.handlers.support import enter_support_mode, exit_support_mode, forward_to_support, forward_to_user, handle_support_topic_selection
 from src.bot.handlers.help import help_command
 
 # Импорты для WaveSpeed generation
@@ -470,6 +471,9 @@ class StickerBot:
 
         async def wrapped_forward_to_support(update, context):
             return await forward_to_support(update, context)
+        
+        async def wrapped_handle_support_topic_selection(update, context):
+            return await handle_support_topic_selection(update, context)
 
         conv_handler = ConversationHandler(
             entry_points=[CommandHandler('start', wrapped_start)],
@@ -516,6 +520,10 @@ class StickerBot:
                 ],
                 WAITING_STICKER_PACK_LINK: [
                     MessageHandler(filters.Sticker.ALL, wrapped_handle_sticker_for_add_pack),
+                ],
+                CHOOSING_SUPPORT_TOPIC: [
+                    CallbackQueryHandler(wrapped_handle_support_topic_selection, pattern='^support_topic:(author_claim|bug_report|improvement|other)$'),
+                    CallbackQueryHandler(wrapped_exit_support, pattern='^exit_support$'),
                 ],
                 SUPPORT_MODE: [
                     MessageHandler(

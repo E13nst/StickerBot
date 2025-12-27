@@ -5,7 +5,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes
 from telegram.error import TelegramError
 
-from src.bot.states import CHOOSING_ACTION, SUPPORT_MODE
+from src.bot.states import CHOOSING_ACTION, SUPPORT_MODE, CHOOSING_SUPPORT_TOPIC
 from src.config.settings import SUPPORT_CHAT_ID, SUPPORT_ENABLED, SUPPORT_USE_TOPICS
 from src.utils.support_storage import SupportStorage
 
@@ -14,9 +14,29 @@ logger = logging.getLogger(__name__)
 # Инициализируем хранилище
 storage = SupportStorage()
 
+# Темы обращений в поддержку
+SUPPORT_TOPICS = {
+    'author_claim': {
+        'emoji': '🎨',
+        'text': 'Подтвердить авторство на стикерпак'
+    },
+    'bug_report': {
+        'emoji': '🐞',
+        'text': 'Нашёл баг'
+    },
+    'improvement': {
+        'emoji': '🔝',
+        'text': 'Предложение по улучшению'
+    },
+    'other': {
+        'emoji': '❔',
+        'text': 'Другое'
+    }
+}
+
 
 async def enter_support_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Вход в режим поддержки"""
+    """Вход в режим поддержки - показываем выбор темы обращения"""
     if not SUPPORT_ENABLED or not SUPPORT_CHAT_ID:
         text = "📞 Функция поддержки временно недоступна."
         if update.callback_query:
@@ -26,21 +46,21 @@ async def enter_support_mode(update: Update, context: ContextTypes.DEFAULT_TYPE)
             await update.message.reply_text(text)
         return CHOOSING_ACTION
     
-    keyboard = InlineKeyboardMarkup([
-        [InlineKeyboardButton("◀️ Назад в меню", callback_data="exit_support")]
-    ])
+    # Создаём клавиатуру с темами обращений
+    keyboard_buttons = []
+    for topic_key, topic_data in SUPPORT_TOPICS.items():
+        keyboard_buttons.append([
+            InlineKeyboardButton(
+                f"{topic_data['emoji']} {topic_data['text']}",
+                callback_data=f"support_topic:{topic_key}"
+            )
+        ])
+    keyboard_buttons.append([InlineKeyboardButton("◀️ Назад в меню", callback_data="exit_support")])
+    keyboard = InlineKeyboardMarkup(keyboard_buttons)
     
     text = (
         "📞 *Режим поддержки*\n\n"
-        "Напишите ваш вопрос, и наша команда ответит в ближайшее время.\n\n"
-        "Вы можете отправить:\n"
-        "• Текстовое сообщение\n"
-        "• Фото\n"
-        "• Документ\n"
-        "• Голосовое сообщение\n"
-        "• Видео\n"
-        "• Стикер\n\n"
-        "Для выхода используйте кнопку ниже или /cancel."
+        "Выберите тему обращения:"
     )
     
     if update.callback_query:
@@ -57,10 +77,7 @@ async def enter_support_mode(update: Update, context: ContextTypes.DEFAULT_TYPE)
             parse_mode='Markdown'
         )
     
-    # Очищаем контекст пользователя
-    context.user_data['support_mode'] = True
-    
-    return SUPPORT_MODE
+    return CHOOSING_SUPPORT_TOPIC
 
 
 async def exit_support_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
@@ -68,8 +85,9 @@ async def exit_support_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     query = update.callback_query
     await query.answer()
     
-    # Очищаем флаг режима поддержки
+    # Очищаем флаг режима поддержки и выбранную тему
     context.user_data.pop('support_mode', None)
+    context.user_data.pop('support_topic', None)
     
     # Возвращаем в главное меню
     from src.bot.handlers.start import start
@@ -118,20 +136,78 @@ async def exit_support_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) 
     return CHOOSING_ACTION
 
 
-async def get_or_create_user_topic(context: ContextTypes.DEFAULT_TYPE, user_id: int, user_name: str) -> Optional[int]:
-    """Получить или создать тему для пользователя"""
+async def handle_support_topic_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
+    """Обработка выбора темы обращения"""
+    query = update.callback_query
+    await query.answer()
+    
+    # Извлекаем тип темы из callback_data
+    topic_type = query.data.split(':')[1]
+    
+    if topic_type not in SUPPORT_TOPICS:
+        await query.edit_message_text("❌ Неверная тема обращения.")
+        return CHOOSING_SUPPORT_TOPIC
+    
+    # Сохраняем выбранную тему в контексте
+    context.user_data['support_topic'] = topic_type
+    context.user_data['support_mode'] = True
+    
+    topic_data = SUPPORT_TOPICS[topic_type]
+    
+    keyboard = InlineKeyboardMarkup([
+        [InlineKeyboardButton("◀️ Назад в меню", callback_data="exit_support")]
+    ])
+    
+    text = (
+        f"📞 *Режим поддержки*\n\n"
+        f"Тема: {topic_data['emoji']} {topic_data['text']}\n\n"
+        "Напишите ваш вопрос, и наша команда ответит в ближайшее время.\n\n"
+        "Вы можете отправить:\n"
+        "• Текстовое сообщение\n"
+        "• Фото\n"
+        "• Документ\n"
+        "• Голосовое сообщение\n"
+        "• Видео\n"
+        "• Стикер\n\n"
+        "Для выхода используйте кнопку ниже или /cancel."
+    )
+    
+    await query.edit_message_text(
+        text,
+        reply_markup=keyboard,
+        parse_mode='Markdown'
+    )
+    
+    return SUPPORT_MODE
+
+
+async def get_or_create_user_topic(context: ContextTypes.DEFAULT_TYPE, user_id: int, user_name: str, topic_type: str) -> Optional[int]:
+    """Получить или создать тему для пользователя с учётом типа обращения"""
     if not SUPPORT_USE_TOPICS:
         return None
     
-    # Проверяем, есть ли уже тема для этого пользователя
-    existing_topic = storage.get_user_topic(user_id)
+    # Проверяем, есть ли уже тема для этого пользователя с этой темой обращения
+    existing_topic = storage.get_user_topic(user_id, topic_type)
     if existing_topic:
-        logger.info(f"Используем существующую тему {existing_topic} для пользователя {user_id}")
+        logger.info(f"Используем существующую тему {existing_topic} для пользователя {user_id}, тип: {topic_type}")
         return existing_topic
+    
+    # Получаем данные темы обращения
+    topic_data = SUPPORT_TOPICS.get(topic_type, SUPPORT_TOPICS['other'])
+    emoji = topic_data['emoji']
+    
+    # Сокращаем имя пользователя (первые 15 символов или только имя)
+    if user_name:
+        # Берём только имя, если есть пробел, иначе первые 15 символов
+        short_name = user_name.split()[0] if ' ' in user_name else user_name[:15]
+    else:
+        short_name = f"User{user_id}"
+    
+    # Формат: Эмодзи + Имя + ID
+    topic_name = f"{emoji} {short_name} {user_id}"
     
     # Создаём новую тему
     try:
-        topic_name = f"Поддержка: {user_name} (ID: {user_id})"
         logger.info(f"Создаём новую тему: {topic_name}")
         
         forum_topic = await context.bot.create_forum_topic(
@@ -141,10 +217,10 @@ async def get_or_create_user_topic(context: ContextTypes.DEFAULT_TYPE, user_id: 
         
         topic_id = forum_topic.message_thread_id
         
-        # Сохраняем тему в хранилище
-        storage.save_user_topic(user_id, topic_id)
+        # Сохраняем тему в хранилище с типом
+        storage.save_user_topic(user_id, topic_id, topic_type)
         
-        logger.info(f"Создана тема {topic_id} для пользователя {user_id}")
+        logger.info(f"Создана тема {topic_id} для пользователя {user_id}, тип: {topic_type}")
         return topic_id
         
     except TelegramError as e:
@@ -163,12 +239,16 @@ async def forward_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if not message:
         return SUPPORT_MODE
     
+    # Получаем тип темы из контекста
+    topic_type = context.user_data.get('support_topic', 'other')
+    
     try:
-        # Получаем или создаём тему для пользователя
+        # Получаем или создаём тему для пользователя с учётом типа обращения
         topic_id = await get_or_create_user_topic(
             context,
             user.id,
-            user.full_name or f"User {user.id}"
+            user.full_name or f"User {user.id}",
+            topic_type
         )
         
         # Формируем информацию о пользователе
@@ -234,7 +314,8 @@ async def forward_to_support(update: Update, context: ContextTypes.DEFAULT_TYPE)
             storage.save_mapping(
                 support_msg_id=forwarded.message_id,
                 user_id=user.id,
-                topic_id=topic_id if topic_id else 0
+                topic_id=topic_id if topic_id else 0,
+                topic_type=topic_type
             )
         
         # Подтверждаем пользователю
