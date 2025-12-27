@@ -2,7 +2,7 @@
 # Encoding: UTF-8
 param(
     [int]$Tail = 50,
-    [string]$LogFile = "bot.log"
+    [string]$LogFile = "logs/bot.log"
 )
 
 [Console]::OutputEncoding = [System.Text.Encoding]::UTF8

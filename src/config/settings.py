@@ -17,7 +17,16 @@ GALLERY_DEFAULT_LANGUAGE = os.getenv('GALLERY_DEFAULT_LANGUAGE', 'ru')
 MINIAPP_GALLERY_URL = os.getenv('MINIAPP_GALLERY_URL')
 
 # Логи
-LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'bot.log')
+LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'logs/bot.log')
+# Создаем директорию для логов, если она не существует
+_log_path = Path(LOG_FILE_PATH)
+if not _log_path.is_absolute():
+    _log_path = PROJECT_ROOT / _log_path
+_log_dir = _log_path.parent
+if _log_dir != PROJECT_ROOT:
+    _log_dir.mkdir(parents=True, exist_ok=True)
+# Обновляем LOG_FILE_PATH на абсолютный путь для использования в RotatingFileHandler
+LOG_FILE_PATH = str(_log_path)
 
 # Webhook и API настройки
 SERVICE_BASE_URL = os.getenv('SERVICE_BASE_URL')
