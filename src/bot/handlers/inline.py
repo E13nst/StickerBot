@@ -1,10 +1,9 @@
 import logging
 from typing import List, Optional
-from urllib.parse import urlencode
-from telegram import Update, InlineQueryResultCachedSticker, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
+from telegram import Update, InlineQueryResultCachedSticker, InlineQueryResultArticle, InputTextMessageContent
 from telegram.ext import ContextTypes
 
-from src.config.settings import WAVESPEED_INLINE_CACHE_TIME, MINIAPP_GALLERY_URL
+from src.config.settings import WAVESPEED_INLINE_CACHE_TIME
 
 logger = logging.getLogger(__name__)
 
@@ -17,45 +16,28 @@ def build_miniapp_button_result(
     user_id: int
 ) -> Optional[InlineQueryResultArticle]:
     """
-    Создает единственный результат с кнопкой для открытия MiniApp.
+    Создает результат с инструкцией для открытия бота напрямую.
     Используется только для пустых inline-запросов.
+    
+    Note: WebApp кнопки не поддерживаются в inline query results,
+    поэтому показываем текстовую инструкцию.
     
     Args:
         inline_query_id: ID inline query для передачи в MiniApp
         user_id: ID пользователя для передачи в MiniApp
     
     Returns:
-        InlineQueryResultArticle с WebApp button или None, если MiniApp URL не настроен
+        InlineQueryResultArticle с инструкцией
     """
-    if not MINIAPP_GALLERY_URL:
-        logger.warning("MINIAPP_GALLERY_URL not configured, cannot create MiniApp button")
-        return None
-    
-    # Формируем URL MiniApp с параметрами
-    params = {
-        "inline_query_id": inline_query_id,
-        "user_id": str(user_id),
-    }
-    
-    web_app_url = f"{MINIAPP_GALLERY_URL}?{urlencode(params)}"
-    
-    keyboard = InlineKeyboardMarkup([[
-        InlineKeyboardButton(
-            "🎨 Сгенерировать стикер",
-            web_app=WebAppInfo(url=web_app_url)
-        )
-    ]])
-    
-    logger.info(f"Created MiniApp button with URL: {web_app_url[:100]}...")
-    
+    # WebApp кнопки не поддерживаются в inline query, показываем инструкцию
     return InlineQueryResultArticle(
-        id="miniapp_button_1",
+        id="generate_instruction",
         title="🎨 Создать новый стикер",
-        description="Откройте MiniApp для генерации стикера",
+        description="Откройте бота напрямую для генерации стикера",
         input_message_content=InputTextMessageContent(
-            "🎨 Нажмите кнопку выше, чтобы создать новый стикер"
+            "🎨 Для создания нового стикера откройте бота напрямую или используйте команду /generate в чате с ботом\n\n"
+            "💡 В inline режиме вы можете искать существующие стикеры по запросу"
         ),
-        reply_markup=keyboard,
     )
 
 
@@ -146,38 +128,25 @@ async def handle_inline_query(
     
     user_id = inline_query.from_user.id
     
-    # СЦЕНАРИЙ А: Пустой запрос - только кнопка MiniApp для генерации
+    # СЦЕНАРИЙ А: Пустой запрос - показываем инструкцию
     if not raw_query:
-        logger.info(f"Empty query detected, showing MiniApp button only. inline_query_id={inline_query_id}, user_id={user_id}")
+        logger.info(f"Empty query detected, showing generation instruction. inline_query_id={inline_query_id}, user_id={user_id}")
         
-        miniapp_result = build_miniapp_button_result(
+        instruction_result = build_miniapp_button_result(
             inline_query_id=inline_query_id,
             user_id=user_id
         )
         
-        if not miniapp_result:
-            # Если MiniApp URL не настроен, возвращаем пустой результат
-            logger.warning("MiniApp button not available, returning empty results")
-            try:
-                await inline_query.answer(
-                    [],
-                    cache_time=WAVESPEED_INLINE_CACHE_TIME,
-                    is_personal=True,
-                )
-            except Exception as e:
-                logger.error(f"Error answering empty inline query: {e}", exc_info=True)
-            return
-        
-        # Возвращаем только кнопку MiniApp
+        # Возвращаем инструкцию для пустого запроса
         try:
             await inline_query.answer(
-                [miniapp_result],
+                [instruction_result] if instruction_result else [],
                 cache_time=WAVESPEED_INLINE_CACHE_TIME,
                 is_personal=True,
             )
-            logger.info("Successfully sent MiniApp button for empty query")
+            logger.info("Successfully sent generation instruction for empty query")
         except Exception as e:
-            logger.error(f"Error answering inline query with MiniApp button: {e}", exc_info=True)
+            logger.error(f"Error answering inline query with instruction: {e}", exc_info=True)
         return
     
     # СЦЕНАРИЙ B: Есть запрос - только поиск по галерее
