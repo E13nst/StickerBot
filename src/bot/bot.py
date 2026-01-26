@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler, InlineQueryHandler,
-    WebAppQueryHandler, filters, ConversationHandler, ContextTypes
+    filters, ConversationHandler, ContextTypes, BaseHandler
 )
 
 # #region agent log
@@ -566,7 +566,16 @@ class StickerBot:
         # InlineQueryHandler вне ConversationHandler, на уровне application
         self.application.add_handler(InlineQueryHandler(wrapped_handle_inline_query))
         
-        # WebAppQueryHandler для обработки данных от MiniApp
+        # Handler для обработки данных от MiniApp через web_app_query
+        # WebAppQueryHandler не существует в библиотеке, используем кастомный handler на основе BaseHandler
+        class WebAppQueryHandler(BaseHandler):
+            def __init__(self, callback):
+                super().__init__(callback, block=False)
+            
+            def check_update(self, update):
+                """Проверяет, есть ли web_app_query в update"""
+                return update.web_app_query is not None
+        
         self.application.add_handler(WebAppQueryHandler(handle_webapp_query))
         
         # Handlers для регенерации (вне ConversationHandler)
