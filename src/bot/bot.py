@@ -38,6 +38,7 @@ from src.config.settings import (
     WEBHOOK_SECRET_TOKEN,
     WEBHOOK_PATH,
     MINIAPP_GALLERY_URL,
+    MINIAPP_GENERATE_URL,
     WAVESPEED_API_KEY,
     FREE_DAILY_LIMIT,
     PREMIUM_DAILY_LIMIT,
@@ -276,7 +277,8 @@ class StickerBot:
             "BOT_TOKEN": bool(BOT_TOKEN),
             "GALLERY_BASE_URL": bool(GALLERY_BASE_URL),
             "GALLERY_SERVICE_TOKEN": bool(GALLERY_SERVICE_TOKEN),
-            "MINIAPP_GALLERY_URL": bool(MINIAPP_GALLERY_URL)
+            "MINIAPP_GALLERY_URL": bool(MINIAPP_GALLERY_URL),
+            "MINIAPP_GENERATE_URL": bool(MINIAPP_GENERATE_URL)
         }, "I")
         # #endregion
 

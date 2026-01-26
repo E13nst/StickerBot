@@ -15,6 +15,7 @@ GALLERY_BASE_URL = os.getenv('GALLERY_BASE_URL')
 GALLERY_SERVICE_TOKEN = os.getenv('GALLERY_SERVICE_TOKEN')
 GALLERY_DEFAULT_LANGUAGE = os.getenv('GALLERY_DEFAULT_LANGUAGE', 'ru')
 MINIAPP_GALLERY_URL = os.getenv('MINIAPP_GALLERY_URL')
+MINIAPP_GENERATE_URL = os.getenv('MINIAPP_GENERATE_URL')  # URL для страницы генерации в inline режиме
 
 # Логи
 LOG_FILE_PATH = os.getenv('LOG_FILE_PATH', 'logs/bot.log')

@@ -1,10 +1,9 @@
 import logging
 from typing import List, Optional
-from urllib.parse import urlencode
 from telegram import Update, InlineQueryResultCachedSticker, InlineQueryResultsButton, WebAppInfo
 from telegram.ext import ContextTypes
 
-from src.config.settings import WAVESPEED_INLINE_CACHE_TIME, MINIAPP_GALLERY_URL
+from src.config.settings import WAVESPEED_INLINE_CACHE_TIME, MINIAPP_GALLERY_URL, MINIAPP_GENERATE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -20,24 +19,27 @@ def create_miniapp_button(
     Создает кнопку для открытия MiniApp в inline query.
     Кнопка отображается НАД результатами и открывает mini app напрямую без отправки сообщения.
     
+    ВАЖНО: Telegram автоматически передает данные пользователя через initData.
+    Не нужно передавать inline_query_id и user_id через URL query string.
+    Mini app может получить эти данные через:
+    - window.Telegram.WebApp.initDataUnsafe.user.id - ID пользователя
+    - window.Telegram.WebApp.initDataUnsafe.query_id - ID inline query
+    
     Args:
-        inline_query_id: ID inline query для передачи в MiniApp
-        user_id: ID пользователя для передачи в MiniApp
+        inline_query_id: ID inline query (не используется - передается через initData)
+        user_id: ID пользователя (не используется - передается через initData)
     
     Returns:
         InlineQueryResultsButton с WebAppInfo или None, если MiniApp URL не настроен
     """
-    if not MINIAPP_GALLERY_URL:
-        logger.warning("MINIAPP_GALLERY_URL not configured, cannot create MiniApp button")
+    # Используем специальный URL для генерации или fallback к gallery + /miniapp/generate
+    if MINIAPP_GENERATE_URL:
+        web_app_url = MINIAPP_GENERATE_URL
+    elif MINIAPP_GALLERY_URL:
+        web_app_url = f"{MINIAPP_GALLERY_URL}/miniapp/generate"
+    else:
+        logger.warning("MINIAPP_GENERATE_URL and MINIAPP_GALLERY_URL not configured, cannot create MiniApp button")
         return None
-    
-    # Формируем URL MiniApp с параметрами
-    params = {
-        "inline_query_id": inline_query_id,
-        "user_id": str(user_id),
-    }
-    
-    web_app_url = f"{MINIAPP_GALLERY_URL}?{urlencode(params)}"
     
     logger.info(f"Created MiniApp button with URL: {web_app_url[:100]}...")
     
