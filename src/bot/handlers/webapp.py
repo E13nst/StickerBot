@@ -23,10 +23,11 @@ async def handle_webapp_query(
         "inline_message_id": "..."  # Опционально: для обновления inline сообщения
     }
     """
-    web_app_query = update.web_app_query
+    # Безопасное получение web_app_query (может отсутствовать в некоторых версиях библиотеки)
+    web_app_query = getattr(update, 'web_app_query', None)
     
     if not web_app_query:
-        logger.warning("handle_webapp_query вызван, но web_app_query is None")
+        logger.warning("handle_webapp_query вызван, но web_app_query is None или отсутствует")
         return
     
     if not web_app_query.from_user:

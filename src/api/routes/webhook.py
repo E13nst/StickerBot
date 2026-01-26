@@ -96,10 +96,12 @@ async def telegram_webhook(request: Request):
         update = Update.de_json(data, bot_instance.application.bot)
         
         # ЛОГ ПЕРЕД process_update
+        # Безопасная проверка атрибутов (web_app_query может отсутствовать в некоторых версиях)
+        web_app_query = getattr(update, 'web_app_query', None)
         logger.info(
             f"UPDATE PROCESSED: update_id={update.update_id}, "
             f"has_inline={bool(update.inline_query)}, "
-            f"has_webapp={bool(update.web_app_query)}, "
+            f"has_webapp={bool(web_app_query)}, "
             f"has_message={bool(update.message)}, "
             f"has_callback={bool(update.callback_query)}"
         )
