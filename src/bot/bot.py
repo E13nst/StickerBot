@@ -785,7 +785,8 @@ class StickerBot:
             logger.info("Webhook удален")
             
             # Указываем allowed_updates для inline_query
-            allowed_updates = ["inline_query", "message", "callback_query", "web_app_query"]
+            # web_app_query не поддерживается в allowed_updates, но handler все равно будет обрабатывать такие updates
+            allowed_updates = ["inline_query", "message", "callback_query"]
             logger.info(f"Starting polling with allowed_updates={allowed_updates}")
             await self.application.updater.start_polling(allowed_updates=allowed_updates)
             
@@ -847,21 +848,21 @@ class StickerBot:
                 )
                 result = await self.application.bot.set_webhook(
                     url=full_webhook_url,
-                    allowed_updates=["inline_query", "message", "callback_query", "web_app_query"]  # Явно указываем inline_query и web_app_query
+                    allowed_updates=["inline_query", "message", "callback_query"]  # web_app_query не поддерживается в allowed_updates
                 )
-                logger.info(f"Результат установки webhook: {result}, allowed_updates=['inline_query', 'message', 'callback_query', 'web_app_query']")
+                logger.info(f"Результат установки webhook: {result}, allowed_updates=['inline_query', 'message', 'callback_query']")
             else:
                 # Устанавливаем webhook с секретным токеном
                 # allowed_updates по умолчанию включает все типы, включая inline_query
                 result = await self.application.bot.set_webhook(
                     url=full_webhook_url,
                     secret_token=WEBHOOK_SECRET_TOKEN,
-                    allowed_updates=["inline_query", "message", "callback_query", "web_app_query"]  # Явно указываем inline_query и web_app_query
+                    allowed_updates=["inline_query", "message", "callback_query"]  # web_app_query не поддерживается в allowed_updates
                 )
                 logger.info(
                     f"Webhook установлен: {full_webhook_url} "
                     f"с секретным токеном (первые 10 символов): {WEBHOOK_SECRET_TOKEN[:10]}... "
-                    f"allowed_updates=['inline_query', 'message', 'callback_query', 'web_app_query']"
+                    f"allowed_updates=['inline_query', 'message', 'callback_query']"
                 )
                 logger.info(f"Результат установки webhook: {result}")
             
