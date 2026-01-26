@@ -3,7 +3,7 @@ from typing import List, Optional
 from telegram import Update, InlineQueryResultCachedSticker, InlineQueryResultsButton, WebAppInfo
 from telegram.ext import ContextTypes
 
-from src.config.settings import WAVESPEED_INLINE_CACHE_TIME, MINIAPP_GALLERY_URL, MINIAPP_GENERATE_URL
+from src.config.settings import WAVESPEED_INLINE_CACHE_TIME, MINIAPP_GALLERY_URL
 
 logger = logging.getLogger(__name__)
 
@@ -19,11 +19,8 @@ def create_miniapp_button(
     Создает кнопку для открытия MiniApp в inline query.
     Кнопка отображается НАД результатами и открывает mini app напрямую без отправки сообщения.
     
-    ВАЖНО: Telegram автоматически передает данные пользователя через initData.
-    Не нужно передавать inline_query_id и user_id через URL query string.
-    Mini app может получить эти данные через:
-    - window.Telegram.WebApp.initDataUnsafe.user.id - ID пользователя
-    - window.Telegram.WebApp.initDataUnsafe.query_id - ID inline query
+    Использует тот же подход, что и в других местах (start.py) - просто MINIAPP_GALLERY_URL.
+    Telegram автоматически передает данные пользователя через initData.
     
     Args:
         inline_query_id: ID inline query (не используется - передается через initData)
@@ -32,20 +29,17 @@ def create_miniapp_button(
     Returns:
         InlineQueryResultsButton с WebAppInfo или None, если MiniApp URL не настроен
     """
-    # Используем специальный URL для генерации или fallback к gallery + /miniapp/generate
-    if MINIAPP_GENERATE_URL:
-        web_app_url = MINIAPP_GENERATE_URL
-    elif MINIAPP_GALLERY_URL:
-        web_app_url = f"{MINIAPP_GALLERY_URL}/miniapp/generate"
-    else:
-        logger.warning("MINIAPP_GENERATE_URL and MINIAPP_GALLERY_URL not configured, cannot create MiniApp button")
+    if not MINIAPP_GALLERY_URL:
+        logger.warning("MINIAPP_GALLERY_URL not configured, cannot create MiniApp button")
         return None
     
-    logger.info(f"Created MiniApp button with URL: {web_app_url[:100]}...")
+    # Используем точно такой же подход, как в start.py - просто базовый URL без модификаций
+    # Это гарантированно работает, так как используется в других местах
+    logger.info(f"Created MiniApp button with URL: {MINIAPP_GALLERY_URL[:100]}...")
     
     return InlineQueryResultsButton(
         text="🎨 Нарисовать стикер с ИИ ≻",
-        web_app=WebAppInfo(url=web_app_url)
+        web_app=WebAppInfo(url=MINIAPP_GALLERY_URL)
     )
 
 
