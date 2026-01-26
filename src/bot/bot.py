@@ -574,7 +574,7 @@ class StickerBot:
             
             def check_update(self, update):
                 """Проверяет, есть ли web_app_query в update"""
-                return update.web_app_query is not None
+                return getattr(update, 'web_app_query', None) is not None
         
         self.application.add_handler(WebAppQueryHandler(handle_webapp_query))
         

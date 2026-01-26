@@ -96,11 +96,34 @@ async def telegram_webhook(request: Request):
         update = Update.de_json(data, bot_instance.application.bot)
         
         # ЛОГ ПЕРЕД process_update
-        logger.info(f"UPDATE PROCESSED: update_id={update.update_id}, has_inline={bool(update.inline_query)}")
+        logger.info(
+            f"UPDATE PROCESSED: update_id={update.update_id}, "
+            f"has_inline={bool(update.inline_query)}, "
+            f"has_webapp={bool(update.web_app_query)}, "
+            f"has_message={bool(update.message)}, "
+            f"has_callback={bool(update.callback_query)}"
+        )
         
-        await bot_instance.application.process_update(update)
+        # КРИТИЧНО: Отправляем ответ сразу, обработку делаем в фоне через очередь
+        # Это предотвращает таймауты Telegram (503 ошибки)
+        # Telegram требует ответ в течение 60 секунд, но лучше ответить сразу
+        try:
+            # Ставим update в очередь для асинхронной обработки
+            await bot_instance.application.update_queue.put(update)
+            logger.info(
+                f"Webhook обновление принято и поставлено в очередь от IP: {client_ip}, "
+                f"update_id={update.update_id}"
+            )
+        except Exception as queue_error:
+            logger.error(
+                f"Ошибка при добавлении update в очередь от IP {client_ip}: {queue_error}",
+                exc_info=True
+            )
+            # Если очередь недоступна, обрабатываем синхронно (но это нежелательно)
+            await bot_instance.application.process_update(update)
+            logger.warning(f"Update обработан синхронно из-за ошибки очереди")
         
-        logger.info(f"Webhook обновление успешно обработано от IP: {client_ip}, update_id: {update.update_id}")
+        # Возвращаем ответ сразу (критично для предотвращения 503)
         return {"ok": True}
         
     except json.JSONDecodeError as e:

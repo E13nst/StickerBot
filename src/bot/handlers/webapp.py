@@ -35,9 +35,11 @@ async def handle_webapp_query(
     
     query_id = web_app_query.query_id
     user_id = web_app_query.from_user.id
+    username = web_app_query.from_user.username or "без username"
     
     logger.info(
-        f"[handle_webapp_query] Received webapp query: query_id={query_id}, user_id={user_id}"
+        f"[handle_webapp_query] WebApp query получен: query_id={query_id}, "
+        f"user_id={user_id}, username={username}"
     )
     
     # Парсим данные от MiniApp
@@ -48,6 +50,11 @@ async def handle_webapp_query(
             return
         
         data = json.loads(data_str)
+        logger.info(
+            f"[handle_webapp_query] Данные от MiniApp получены: "
+            f"query_id={query_id}, data_length={len(data_str)}, "
+            f"data_preview={data_str[:100]}..."
+        )
         logger.debug(f"[handle_webapp_query] Parsed data: {data}")
         
         file_id = data.get("file_id")
@@ -66,13 +73,18 @@ async def handle_webapp_query(
         
         # Отправляем результат через answerWebAppQuery
         try:
+            logger.info(
+                f"[handle_webapp_query] Вызываю answerWebAppQuery для query_id={query_id}, "
+                f"file_id={file_id[:20]}..."
+            )
             await context.bot.answer_web_app_query(
                 web_app_query_id=query_id,
                 result=result
             )
             logger.info(
-                f"[handle_webapp_query] SUCCESS: Sent result via answerWebAppQuery "
-                f"for query_id={query_id}, file_id={file_id[:20]}..."
+                f"[handle_webapp_query] SUCCESS: answerWebAppQuery выполнен успешно. "
+                f"query_id={query_id}, file_id={file_id[:20]}..., "
+                f"result_id={result.id}"
             )
             return
             
