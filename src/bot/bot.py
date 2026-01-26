@@ -6,7 +6,7 @@ from pathlib import Path
 from datetime import datetime
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler, InlineQueryHandler,
-    filters, ConversationHandler, ContextTypes
+    WebAppQueryHandler, filters, ConversationHandler, ContextTypes
 )
 
 # #region agent log
@@ -100,7 +100,8 @@ from src.bot.handlers.sticker_common import handle_sticker
 from src.bot.handlers.common import cancel, error_handler
 from src.bot.handlers.add_pack_from_sticker import handle_sticker_for_add_pack, handle_add_to_gallery
 from src.bot.handlers.inline import handle_inline_query
-from src.bot.handlers.generation import handle_generate_callback, handle_regenerate_callback
+from src.bot.handlers.generation import handle_regenerate_callback
+from src.bot.handlers.webapp import handle_webapp_query
 from src.bot.handlers.support import enter_support_mode, exit_support_mode, forward_to_support, forward_to_user, handle_support_topic_selection
 from src.bot.handlers.help import help_command
 
@@ -565,14 +566,12 @@ class StickerBot:
         # InlineQueryHandler вне ConversationHandler, на уровне application
         self.application.add_handler(InlineQueryHandler(wrapped_handle_inline_query))
         
-        # Handlers для генерации (вне ConversationHandler)
+        # WebAppQueryHandler для обработки данных от MiniApp
+        self.application.add_handler(WebAppQueryHandler(handle_webapp_query))
+        
+        # Handlers для регенерации (вне ConversationHandler)
+        # Примечание: handle_generate_callback удален, так как inline flow теперь использует только MiniApp
         if self.wavespeed_client:
-            gen_handler = CallbackQueryHandler(
-                handle_generate_callback,
-                pattern='^gen:'
-            )
-            self.application.add_handler(gen_handler)
-            
             regen_handler = CallbackQueryHandler(
                 handle_regenerate_callback,
                 pattern='^regen:'
@@ -777,7 +776,7 @@ class StickerBot:
             logger.info("Webhook удален")
             
             # Указываем allowed_updates для inline_query
-            allowed_updates = ["inline_query", "message", "callback_query"]
+            allowed_updates = ["inline_query", "message", "callback_query", "web_app_query"]
             logger.info(f"Starting polling with allowed_updates={allowed_updates}")
             await self.application.updater.start_polling(allowed_updates=allowed_updates)
             
@@ -839,21 +838,21 @@ class StickerBot:
                 )
                 result = await self.application.bot.set_webhook(
                     url=full_webhook_url,
-                    allowed_updates=["inline_query", "message", "callback_query"]  # Явно указываем inline_query
+                    allowed_updates=["inline_query", "message", "callback_query", "web_app_query"]  # Явно указываем inline_query и web_app_query
                 )
-                logger.info(f"Результат установки webhook: {result}, allowed_updates=['inline_query', 'message', 'callback_query']")
+                logger.info(f"Результат установки webhook: {result}, allowed_updates=['inline_query', 'message', 'callback_query', 'web_app_query']")
             else:
                 # Устанавливаем webhook с секретным токеном
                 # allowed_updates по умолчанию включает все типы, включая inline_query
                 result = await self.application.bot.set_webhook(
                     url=full_webhook_url,
                     secret_token=WEBHOOK_SECRET_TOKEN,
-                    allowed_updates=["inline_query", "message", "callback_query"]  # Явно указываем inline_query
+                    allowed_updates=["inline_query", "message", "callback_query", "web_app_query"]  # Явно указываем inline_query и web_app_query
                 )
                 logger.info(
                     f"Webhook установлен: {full_webhook_url} "
                     f"с секретным токеном (первые 10 символов): {WEBHOOK_SECRET_TOKEN[:10]}... "
-                    f"allowed_updates=['inline_query', 'message', 'callback_query']"
+                    f"allowed_updates=['inline_query', 'message', 'callback_query', 'web_app_query']"
                 )
                 logger.info(f"Результат установки webhook: {result}")
             

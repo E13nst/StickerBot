@@ -1,11 +1,10 @@
 import logging
-import hashlib
-from typing import List, Optional, Union
-from telegram import Update, InlineQueryResultCachedSticker, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardButton, InlineKeyboardMarkup
+from typing import List, Optional
+from urllib.parse import urlencode
+from telegram import Update, InlineQueryResultCachedSticker, InlineQueryResultArticle, InputTextMessageContent, InlineKeyboardButton, InlineKeyboardMarkup, WebAppInfo
 from telegram.ext import ContextTypes
 
-from src.config.settings import WAVESPEED_API_KEY, WAVESPEED_INLINE_CACHE_TIME
-from src.utils.prompt_validator import validate_prompt
+from src.config.settings import WAVESPEED_INLINE_CACHE_TIME, MINIAPP_GALLERY_URL
 
 logger = logging.getLogger(__name__)
 
@@ -13,114 +12,51 @@ INLINE_LIMIT = 20
 TELEGRAM_MAX_RESULTS = 50  # Максимальное количество результатов в inline query
 
 
-def _get_stable_gen_id(raw_query: str, variant: str = "default") -> str:
-    """Генерирует стабильный ID для generate result на основе raw_query"""
-    # Используем короткий хеш для стабильности (<= 64 байт)
-    if not raw_query:
-        # Для пустого query используем короткий фиксированный ID
-        variant_map = {
-            "hint": "gen_hint_",
-            "unavailable": "gen_off_",
-            "rejected": "gen_reject_",
-            "valid": "gen_ready_"
-        }
-        prefix = variant_map.get(variant, "gen_")
-        return f"{prefix}empty"
+def build_miniapp_button_result(
+    inline_query_id: str,
+    user_id: int
+) -> Optional[InlineQueryResultArticle]:
+    """
+    Создает единственный результат с кнопкой для открытия MiniApp.
+    Используется только для пустых inline-запросов.
     
-    # Короткий хеш от raw_query (первые 10 hex символов sha256)
-    query_hash = hashlib.sha256(raw_query.encode('utf-8')).hexdigest()[:10]
+    Args:
+        inline_query_id: ID inline query для передачи в MiniApp
+        user_id: ID пользователя для передачи в MiniApp
     
-    # Префиксы по variant
-    variant_map = {
-        "hint": "gen_hint_",
-        "unavailable": "gen_off_",
-        "rejected": "gen_reject_",
-        "valid": "gen_ready_"
+    Returns:
+        InlineQueryResultArticle с WebApp button или None, если MiniApp URL не настроен
+    """
+    if not MINIAPP_GALLERY_URL:
+        logger.warning("MINIAPP_GALLERY_URL not configured, cannot create MiniApp button")
+        return None
+    
+    # Формируем URL MiniApp с параметрами
+    params = {
+        "inline_query_id": inline_query_id,
+        "user_id": str(user_id),
     }
-    prefix = variant_map.get(variant, "gen_")
     
-    result_id = f"{prefix}{query_hash}"
-    # Проверка длины (должно быть <= 64 байт, но мы используем короткий хеш)
-    if len(result_id) > 64:
-        result_id = result_id[:64]
-    
-    return result_id
-
-
-def build_generate_result(
-    raw_query: str,
-    prompt_store,
-    generation_enabled: bool,
-    placeholder_file_id: Optional[str] = None
-) -> Optional[Union[InlineQueryResultArticle, InlineQueryResultCachedSticker]]:
-    """
-    Строит результат генерации для inline query.
-    НЕ отправляет ответ в Telegram, только возвращает InlineQueryResultArticle или InlineQueryResultCachedSticker.
-    """
-    # Вариант A: генерация выключена
-    if not generation_enabled:
-        return InlineQueryResultArticle(
-            id=_get_stable_gen_id(raw_query, "unavailable"),
-            title="Generation temporarily unavailable",
-            description="Try again later",
-            input_message_content=InputTextMessageContent(
-                "🎨 STIXLY generation is temporarily unavailable."
-            ),
-        )
-    
-    # Вариант B: query пустой или короткий
-    if not raw_query or len(raw_query) < 3:
-        return InlineQueryResultArticle(
-            id=_get_stable_gen_id(raw_query, "hint"),
-            title="Generate sticker (STIXLY)",
-            description="Type a prompt to generate",
-            input_message_content=InputTextMessageContent(
-                "🎨 Type a prompt to generate a sticker with @stixlybot"
-            ),
-        )
-    
-    # Вариант C: валидация prompt
-    is_valid, error_msg = validate_prompt(raw_query)
-    
-    if not is_valid:
-        # Prompt невалиден - показываем ошибку без кнопки
-        return InlineQueryResultArticle(
-            id=_get_stable_gen_id(raw_query, "rejected"),
-            title="Prompt rejected",
-            description=error_msg or "Try a different prompt",
-            input_message_content=InputTextMessageContent(
-                f"❌ Prompt rejected: {error_msg or 'Invalid prompt'}"
-            ),
-        )
-    
-    # Prompt валиден - создаем результат с кнопкой Generate
-    prompt_hash = prompt_store.store_prompt(raw_query)
-    description = raw_query[:60] + "..." if len(raw_query) > 60 else raw_query
-    message_text = f"🎨 STIXLY generation: {raw_query[:200]}"
+    web_app_url = f"{MINIAPP_GALLERY_URL}?{urlencode(params)}"
     
     keyboard = InlineKeyboardMarkup([[
         InlineKeyboardButton(
-            "Generate",
-            callback_data=f"gen:{prompt_hash}"
+            "🎨 Сгенерировать стикер",
+            web_app=WebAppInfo(url=web_app_url)
         )
     ]])
     
-    # Если есть placeholder_file_id, используем InlineQueryResultCachedSticker
-    if placeholder_file_id:
-        return InlineQueryResultCachedSticker(
-            id=_get_stable_gen_id(raw_query, "valid"),
-            sticker_file_id=placeholder_file_id,
-            reply_markup=keyboard,
-        )
-    else:
-        # Fallback на старый вариант (текст)
-        return InlineQueryResultArticle(
-            id=_get_stable_gen_id(raw_query, "valid"),
-            title="Generate sticker (STIXLY)",
-            description=description,
-            input_message_content=InputTextMessageContent(message_text),
-            reply_markup=keyboard,
-        )
+    logger.info(f"Created MiniApp button with URL: {web_app_url[:100]}...")
+    
+    return InlineQueryResultArticle(
+        id="miniapp_button_1",
+        title="🎨 Создать новый стикер",
+        description="Откройте MiniApp для генерации стикера",
+        input_message_content=InputTextMessageContent(
+            "🎨 Нажмите кнопку выше, чтобы создать новый стикер"
+        ),
+        reply_markup=keyboard,
+    )
 
 
 async def build_search_results(
@@ -202,35 +138,50 @@ async def handle_inline_query(
     
     raw_query = (inline_query.query or "").strip()
     
-    # Проверяем, включена ли генерация
-    wavespeed_client = context.bot_data.get("wavespeed_client")
-    prompt_store = context.bot_data.get("prompt_store")
+    # Извлекаем параметры для передачи в MiniApp
+    inline_query_id = inline_query.id
+    if not inline_query.from_user:
+        logger.error("inline_query.from_user is None, cannot process query")
+        return
     
-    generation_enabled = bool(WAVESPEED_API_KEY and wavespeed_client and prompt_store)
+    user_id = inline_query.from_user.id
     
-    # Получаем placeholder_file_id из bot_data
-    placeholder_file_id = context.bot_data.get("placeholder_sticker_file_id")
-    if placeholder_file_id:
-        logger.debug(f"Placeholder file_id from bot_data: {placeholder_file_id[:20]}...")
-    else:
-        logger.warning("Placeholder file_id not found in bot_data - will use text fallback")
+    # СЦЕНАРИЙ А: Пустой запрос - только кнопка MiniApp для генерации
+    if not raw_query:
+        logger.info(f"Empty query detected, showing MiniApp button only. inline_query_id={inline_query_id}, user_id={user_id}")
+        
+        miniapp_result = build_miniapp_button_result(
+            inline_query_id=inline_query_id,
+            user_id=user_id
+        )
+        
+        if not miniapp_result:
+            # Если MiniApp URL не настроен, возвращаем пустой результат
+            logger.warning("MiniApp button not available, returning empty results")
+            try:
+                await inline_query.answer(
+                    [],
+                    cache_time=WAVESPEED_INLINE_CACHE_TIME,
+                    is_personal=True,
+                )
+            except Exception as e:
+                logger.error(f"Error answering empty inline query: {e}", exc_info=True)
+            return
+        
+        # Возвращаем только кнопку MiniApp
+        try:
+            await inline_query.answer(
+                [miniapp_result],
+                cache_time=WAVESPEED_INLINE_CACHE_TIME,
+                is_personal=True,
+            )
+            logger.info("Successfully sent MiniApp button for empty query")
+        except Exception as e:
+            logger.error(f"Error answering inline query with MiniApp button: {e}", exc_info=True)
+        return
     
-    # Строим результат генерации с placeholder_file_id
-    gen_result = build_generate_result(
-        raw_query, 
-        prompt_store, 
-        generation_enabled,
-        placeholder_file_id=placeholder_file_id
-    )
-    
-    # Логируем тип результата для диагностики
-    if gen_result:
-        result_type = type(gen_result).__name__
-        logger.debug(f"Generated result type: {result_type}")
-        if isinstance(gen_result, InlineQueryResultCachedSticker):
-            logger.info("Using InlineQueryResultCachedSticker for generation result")
-        elif isinstance(gen_result, InlineQueryResultArticle):
-            logger.warning("Falling back to InlineQueryResultArticle - placeholder sticker not available")
+    # СЦЕНАРИЙ B: Есть запрос - только поиск по галерее
+    logger.info(f"Search query detected: {raw_query!r}, inline_query_id={inline_query_id}, user_id={user_id}")
     
     # Парсинг offset
     offset_str = inline_query.offset or "0"
@@ -239,59 +190,41 @@ async def handle_inline_query(
     except ValueError:
         offset = 0
     
-    # Вычисляем effective_search_limit: резервируем слот для generate-результата
-    # Мы только уменьшаем поиск, когда INLINE_LIMIT может превысить лимит Telegram (50) с учетом gen_slot.
-    # При INLINE_LIMIT=20 сохраняем полные 20 результатов поиска (20+1=21 < 50).
-    gen_slot = 1 if gen_result else 0
-    effective_search_limit = min(INLINE_LIMIT, TELEGRAM_MAX_RESULTS - gen_slot)
-    if effective_search_limit <= 0:
-        effective_search_limit = 0
-    
-    # Строим результаты поиска с учетом effective_search_limit
+    # Строим результаты поиска
     search_results = await build_search_results(
-        inline_query, raw_query, gallery_service, offset, limit=effective_search_limit
+        inline_query, raw_query, gallery_service, offset, limit=INLINE_LIMIT
     )
     
-    # Дополнительная защита: обрезаем search_results до effective_search_limit
-    # (на случай, если gallery_service вернул больше, чем запрошено)
-    if len(search_results) > effective_search_limit:
-        search_results = search_results[:effective_search_limit]
-    
-    # Объединяем: генерация всегда первой
-    results = []
-    if gen_result:
-        results.append(gen_result)
-    results.extend(search_results)
+    # Дополнительная защита: обрезаем search_results до INLINE_LIMIT
+    if len(search_results) > INLINE_LIMIT:
+        search_results = search_results[:INLINE_LIMIT]
     
     # Проверка: итоговый список не должен превышать TELEGRAM_MAX_RESULTS
-    # (но это не должно произойти, т.к. мы уже ограничили search_results)
-    if len(results) > TELEGRAM_MAX_RESULTS:
-        # Если по какой-то причине все равно превысили, обрезаем только search_results
-        max_search = TELEGRAM_MAX_RESULTS - gen_slot
-        results = [gen_result] + search_results[:max_search] if gen_result else search_results[:max_search]
+    if len(search_results) > TELEGRAM_MAX_RESULTS:
+        search_results = search_results[:TELEGRAM_MAX_RESULTS]
     
-    # Пагинация: next_offset считается ТОЛЬКО по search_results с учетом effective_search_limit
-    search_count = len(search_results)
-    if effective_search_limit > 0 and search_count == effective_search_limit:
-        next_offset = str(offset + effective_search_limit)
+    # Пагинация: next_offset считается по search_results
+    if len(search_results) == INLINE_LIMIT:
+        next_offset = str(offset + INLINE_LIMIT)
     else:
         next_offset = ""
     
-    # Отвечаем на inline-запрос ОДИН раз
+    # Отвечаем на inline-запрос только результатами поиска
     try:
         await inline_query.answer(
-            results,
+            search_results,
             cache_time=WAVESPEED_INLINE_CACHE_TIME,
             is_personal=True,
             next_offset=next_offset,
         )
+        logger.info(f"Successfully sent {len(search_results)} search results for query: {raw_query!r}")
     except Exception as e:
         # Обрабатываем ошибки gracefully (не падаем при timeout или invalid query)
         error_msg = str(e)
         if "Result_id_invalid" in error_msg or "invalid" in error_msg.lower():
             logger.error(
                 f"Ошибка валидации ID результатов для inline-запроса: {error_msg}. "
-                f"raw_query={raw_query!r}, offset={offset}, results_count={len(results)}"
+                f"raw_query={raw_query!r}, offset={offset}, results_count={len(search_results)}"
             )
         elif "timeout" in error_msg.lower() or "too old" in error_msg.lower():
             logger.warning(
