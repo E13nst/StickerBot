@@ -22,6 +22,7 @@ def parse_file_id_query(raw_query: str) -> Optional[str]:
     - просто сам file_id без пробелов
     """
     if not raw_query:
+        logger.info("parse_file_id_query: empty raw_query, no file_id detected")
         return None
     
     text = raw_query.strip()
@@ -31,14 +32,17 @@ def parse_file_id_query(raw_query: str) -> Optional[str]:
     if match:
         file_id = match.group(1).strip()
         if file_id:
+            logger.info("parse_file_id_query: detected prefixed file_id: %s", file_id)
             return file_id
     
     # 2) Если в запросе только одно слово — считаем его кандидатом в file_id
     if " " not in text:
         # Простая валидация: допустимы буквы/цифры/_/-, длина от 10 символов
         if re.fullmatch(r"[A-Za-z0-9_-]{10,}", text):
+            logger.info("parse_file_id_query: detected raw file_id candidate: %s", text)
             return text
     
+    logger.info("parse_file_id_query: no file_id detected in query: %r", raw_query)
     return None
 
 
@@ -233,6 +237,12 @@ async def handle_inline_query(
         file_id_hash = hash(file_id) % 1000000  # до 6 цифр
         result_id = f"fid_{abs(file_id_hash)}"
         
+        logger.info(
+            "Preparing InlineQueryResultCachedSticker for file_id=%s with result_id=%s",
+            file_id,
+            result_id,
+        )
+        
         miniapp_button = create_miniapp_button(
             inline_query_id=inline_query_id,
             user_id=user_id,
@@ -245,6 +255,11 @@ async def handle_inline_query(
         )
         
         try:
+            logger.info(
+                "Answering inline query with single cached sticker: file_id=%s, inline_query_id=%s",
+                file_id,
+                inline_query_id,
+            )
             await inline_query.answer(
                 [result],
                 cache_time=WAVESPEED_INLINE_CACHE_TIME,
@@ -262,14 +277,19 @@ async def handle_inline_query(
             logger.error(
                 "Error answering inline file_id query: %s, file_id=%s, inline_query_id=%s",
                 error_msg,
-                inline_query_id,
                 file_id,
+                inline_query_id,
                 exc_info=True,
             )
         return
     
     # СЦЕНАРИЙ B: Есть запрос - поиск по галерее + кнопка MiniApp
-    logger.info(f"Search query detected: {raw_query!r}, inline_query_id={inline_query_id}, user_id={user_id}")
+    logger.info(
+        "No file_id detected in inline query, falling back to gallery search: raw_query=%r, inline_query_id=%s, user_id=%s",
+        raw_query,
+        inline_query_id,
+        user_id,
+    )
     
     # Парсинг offset
     offset_str = inline_query.offset or "0"
