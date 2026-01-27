@@ -3,7 +3,7 @@ from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, WebAppI
 from telegram.ext import ContextTypes
 
 from src.bot.states import CHOOSING_ACTION, WAITING_STICKER_PACK_LINK
-from src.config.settings import MINIAPP_GALLERY_URL
+from src.config.settings import MINIAPP_GALLERY_URL, MINIAPP_GENERATE_URL
 
 logger = logging.getLogger(__name__)
 
@@ -42,12 +42,50 @@ def main_menu_keyboard() -> InlineKeyboardMarkup:
 
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
-    """Начало диалога"""
+    """Начало диалога.
+
+    Также обрабатывает deep link параметр из inline-режима:
+    /start generate_<inline_query_id> — открытие страницы генерации MINIAPP_GENERATE_URL.
+    """
     user = update.effective_user
     context.user_data.clear()
 
     name = user.first_name or "друг"
 
+    # Обработка deep link параметра, используемого при запуске из inline-режима
+    args = context.args or []
+    if args:
+        param = args[0]
+        if param.startswith("generate_"):
+            inline_query_id = param.replace("generate_", "", 1)
+            context.user_data["inline_query_id"] = inline_query_id
+            context.user_data["source"] = "inline"
+
+            keyboard = InlineKeyboardMarkup(
+                [
+                    [
+                        InlineKeyboardButton(
+                            "🎨 Открыть генератор стикеров",
+                            web_app=WebAppInfo(url=MINIAPP_GENERATE_URL),
+                        )
+                    ]
+                ]
+            )
+
+            text = (
+                f"Йо, {name}!\n\n"
+                "Открываю генератор стикеров с ИИ.\n"
+                "Нажми кнопку ниже, чтобы запустить Mini App."
+            )
+
+            if update.message:
+                await update.message.reply_text(text, reply_markup=keyboard)
+            elif update.callback_query and update.callback_query.message:
+                await update.callback_query.message.reply_text(text, reply_markup=keyboard)
+
+            return CHOOSING_ACTION
+
+    # Стандартный сценарий /start без параметров
     text = (
         f"Йо, {name}!\n"
         "Ты в зоне Stixly — наше комьюнити собирает самую большую галерею стикеров.\n\n"
@@ -61,7 +99,11 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
         "❓ Помощь: /help | 📞 Поддержка: /support\n"
     )
 
-    await update.message.reply_text(text, reply_markup=main_menu_keyboard(), parse_mode='HTML')
+    if update.message:
+        await update.message.reply_text(text, reply_markup=main_menu_keyboard(), parse_mode='HTML')
+    else:
+        # Fallback на случай, если start вызван не через обычное сообщение
+        logger.warning("start called without update.message")
 
     return CHOOSING_ACTION
 

@@ -1,9 +1,9 @@
 import logging
 from typing import List, Optional
-from telegram import Update, InlineQueryResultCachedSticker, InlineQueryResultsButton, WebAppInfo
+from telegram import Update, InlineQueryResultCachedSticker, InlineQueryResultsButton
 from telegram.ext import ContextTypes
 
-from src.config.settings import WAVESPEED_INLINE_CACHE_TIME, MINIAPP_GALLERY_URL
+from src.config.settings import WAVESPEED_INLINE_CACHE_TIME
 
 logger = logging.getLogger(__name__)
 
@@ -13,33 +13,39 @@ TELEGRAM_MAX_RESULTS = 50  # Максимальное количество ре�
 
 def create_miniapp_button(
     inline_query_id: str,
-    user_id: int
+    user_id: int,
+    bot_username: str,
 ) -> Optional[InlineQueryResultsButton]:
     """
-    Создает кнопку для открытия MiniApp в inline query.
-    Кнопка отображается НАД результатами и открывает mini app напрямую без отправки сообщения.
-    
-    Использует тот же подход, что и в других местах (start.py) - просто MINIAPP_GALLERY_URL.
-    Telegram автоматически передает данные пользователя через initData.
-    
+    Создает кнопку для открытия MiniApp из inline-режима через start_parameter.
+
+    Кнопка отображается НАД результатами. При нажатии Telegram откроет личный чат
+    с ботом и передаст параметр в /start, например: /start generate_<inline_query_id>.
+
     Args:
-        inline_query_id: ID inline query (не используется - передается через initData)
-        user_id: ID пользователя (не используется - передается через initData)
-    
+        inline_query_id: ID inline query, используется для формирования start_parameter
+        user_id: ID пользователя (зарезервировано для будущего использования)
+        bot_username: username бота (зарезервировано, Telegram сам подставит бота по контексту)
+
     Returns:
-        InlineQueryResultsButton с WebAppInfo или None, если MiniApp URL не настроен
+        InlineQueryResultsButton с start_parameter.
+        MiniApp фактически будет открыт уже из личного чата, где доступен initData.
     """
-    if not MINIAPP_GALLERY_URL:
-        logger.warning("MINIAPP_GALLERY_URL not configured, cannot create MiniApp button")
+    if not inline_query_id:
+        logger.warning("inline_query_id is empty, cannot create MiniApp button with start_parameter")
         return None
-    
-    # Используем точно такой же подход, как в start.py - просто базовый URL без модификаций
-    # Это гарантированно работает, так как используется в других местах
-    logger.info(f"Created MiniApp button with URL: {MINIAPP_GALLERY_URL[:100]}...")
-    
+
+    start_param = f"generate_{inline_query_id}"
+    logger.info(
+        "Created MiniApp button with start_parameter: %s for user_id=%s bot=%s",
+        start_param,
+        user_id,
+        bot_username,
+    )
+
     return InlineQueryResultsButton(
         text="🎨 Нарисовать стикер с ИИ ≻",
-        web_app=WebAppInfo(url=MINIAPP_GALLERY_URL)
+        start_parameter=start_param,
     )
 
 
@@ -129,6 +135,7 @@ async def handle_inline_query(
         return
     
     user_id = inline_query.from_user.id
+    bot_username = (context.bot.username or "").lstrip("@") if context.bot else ""
     
     # СЦЕНАРИЙ А: Пустой запрос - только кнопка MiniApp для генерации
     if not raw_query:
@@ -140,7 +147,8 @@ async def handle_inline_query(
         # Создаем кнопку MiniApp
         miniapp_button = create_miniapp_button(
             inline_query_id=inline_query_id,
-            user_id=user_id
+            user_id=user_id,
+            bot_username=bot_username,
         )
         
         if not miniapp_button:
@@ -205,7 +213,8 @@ async def handle_inline_query(
     # Создаем кнопку MiniApp для отображения НАД результатами поиска
     miniapp_button = create_miniapp_button(
         inline_query_id=inline_query_id,
-        user_id=user_id
+        user_id=user_id,
+        bot_username=bot_username,
     )
     
     # Отвечаем на inline-запрос результатами поиска И кнопкой MiniApp
