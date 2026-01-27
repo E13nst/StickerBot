@@ -1,4 +1,5 @@
 import logging
+import re
 from typing import List, Optional
 from telegram import Update, InlineQueryResultCachedSticker, InlineQueryResultsButton
 from telegram.ext import ContextTypes
@@ -9,6 +10,36 @@ logger = logging.getLogger(__name__)
 
 INLINE_LIMIT = 20
 TELEGRAM_MAX_RESULTS = 50  # Максимальное количество результатов в inline query
+
+
+def parse_file_id_query(raw_query: str) -> Optional[str]:
+    """
+    Пытается извлечь file_id из текста запроса.
+    
+    Поддерживаются форматы:
+    - \"file_id:<id>\"
+    - \"fileid:<id>\"
+    - просто сам file_id без пробелов
+    """
+    if not raw_query:
+        return None
+    
+    text = raw_query.strip()
+    
+    # 1) Форматы с префиксом: file_id:..., fileid:...
+    match = re.search(r"(?i)\\bfile_?id\\s*:\\s*([A-Za-z0-9_-]+)", text)
+    if match:
+        file_id = match.group(1).strip()
+        if file_id:
+            return file_id
+    
+    # 2) Если в запросе только одно слово — считаем его кандидатом в file_id
+    if " " not in text:
+        # Простая валидация: допустимы буквы/цифры/_/-, длина от 10 символов
+        if re.fullmatch(r"[A-Za-z0-9_-]{10,}", text):
+            return text
+    
+    return None
 
 
 def create_miniapp_button(
@@ -127,6 +158,13 @@ async def handle_inline_query(
         return
     
     raw_query = (inline_query.query or "").strip()
+    logger.info(
+        "Received inline query: raw_query=%r, inline_query_id=%s, user_id=%s, offset=%r",
+        raw_query,
+        getattr(inline_query, "id", None),
+        getattr(getattr(inline_query, "from_user", None), "id", None),
+        inline_query.offset,
+    )
     
     # Извлекаем параметры для передачи в MiniApp
     inline_query_id = inline_query.id
@@ -179,6 +217,55 @@ async def handle_inline_query(
             )
         except Exception as e:
             logger.error(f"Error answering inline query with MiniApp button: {e}", exc_info=True)
+        return
+    
+    # СЦЕНАРИЙ C: Прямой запрос по file_id
+    file_id = parse_file_id_query(raw_query)
+    if file_id:
+        logger.info(
+            "Inline file_id query detected: file_id=%s, inline_query_id=%s, user_id=%s",
+            file_id,
+            inline_query_id,
+            user_id,
+        )
+        
+        # Формируем стабильный и короткий ID результата
+        file_id_hash = hash(file_id) % 1000000  # до 6 цифр
+        result_id = f"fid_{abs(file_id_hash)}"
+        
+        miniapp_button = create_miniapp_button(
+            inline_query_id=inline_query_id,
+            user_id=user_id,
+            bot_username=bot_username,
+        )
+        
+        result = InlineQueryResultCachedSticker(
+            id=result_id,
+            sticker_file_id=file_id,
+        )
+        
+        try:
+            await inline_query.answer(
+                [result],
+                cache_time=WAVESPEED_INLINE_CACHE_TIME,
+                is_personal=True,
+                next_offset="",
+                button=miniapp_button,
+            )
+            logger.info(
+                "Successfully sent sticker by file_id in inline mode: file_id=%s, result_id=%s",
+                file_id,
+                result_id,
+            )
+        except Exception as e:
+            error_msg = str(e)
+            logger.error(
+                "Error answering inline file_id query: %s, file_id=%s, inline_query_id=%s",
+                error_msg,
+                inline_query_id,
+                file_id,
+                exc_info=True,
+            )
         return
     
     # СЦЕНАРИЙ B: Есть запрос - поиск по галерее + кнопка MiniApp
