@@ -28,7 +28,7 @@ def parse_file_id_query(raw_query: str) -> Optional[str]:
     text = raw_query.strip()
     
     # 1) Форматы с префиксом: file_id:..., fileid:...
-    match = re.search(r"(?i)\\bfile_?id\\s*:\\s*([A-Za-z0-9_-]+)", text)
+    match = re.search(r"(?i)\bfile_?id\s*:\s*([A-Za-z0-9_-]+)", text)
     if match:
         file_id = match.group(1).strip()
         if file_id:
