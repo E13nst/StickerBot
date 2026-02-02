@@ -235,9 +235,42 @@ class WebhookNotifier:
                 exc_info=True
             )
     
+    def _canonical_json(self, data: Dict[str, Any]) -> str:
+        """
+        Сериализует данные в canonical JSON формат:
+        - Ключи отсортированы в алфавитном порядке
+        - Без пробелов между элементами
+        - UTF-8 кодировка
+        - ensure_ascii=False для корректной работы с Unicode
+        
+        Args:
+            data: Словарь для сериализации
+            
+        Returns:
+            Canonical JSON строка
+        """
+        # Сортируем ключи для детерминированного порядка
+        sorted_data = dict(sorted(data.items()))
+        
+        # Сериализуем без пробелов (separators=(',', ':'))
+        # ensure_ascii=False для UTF-8
+        canonical_json = json.dumps(
+            sorted_data,
+            ensure_ascii=False,
+            separators=(',', ':'),
+            sort_keys=True  # Дополнительная гарантия сортировки
+        )
+        
+        return canonical_json
+    
     async def _send_webhook(self, url: str, payload: Dict[str, Any]) -> bool:
         """
-        Отправить HTTP POST запрос на webhook URL
+        Отправить HTTP POST запрос на webhook URL с HMAC подписью
+        
+        Использует canonical JSON для детерминированной подписи:
+        - Ключи отсортированы
+        - Без пробелов
+        - UTF-8 кодировка
         
         Args:
             url: URL для отправки
@@ -251,25 +284,29 @@ class WebhookNotifier:
             return False
         
         try:
-            # Сериализуем payload в JSON
-            json_body = json.dumps(payload, ensure_ascii=False)
+            # Сериализуем payload в canonical JSON
+            canonical_json_body = self._canonical_json(payload)
             
             # Генерируем HMAC подпись если есть secret
             headers = {
-                "Content-Type": "application/json",
+                "Content-Type": "application/json; charset=utf-8",
                 "User-Agent": "StickerBot-WebhookNotifier/1.0"
             }
             
             if self._shared_secret:
-                signature = self._generate_hmac_signature(json_body)
+                signature = self._generate_hmac_signature(canonical_json_body)
                 headers["X-Webhook-Signature"] = signature
-                logger.debug(f"HMAC signature generated for webhook request")
+                logger.debug(
+                    f"HMAC signature generated: "
+                    f"payload_keys={sorted(payload.keys())}, "
+                    f"signature_preview={signature[:16]}..."
+                )
             
             # Отправляем запрос
             logger.debug(f"Sending webhook POST to {url}")
             response = await self._client.post(
                 url,
-                content=json_body,
+                content=canonical_json_body.encode('utf-8'),
                 headers=headers
             )
             
@@ -299,23 +336,30 @@ class WebhookNotifier:
             logger.error(f"Unexpected error sending webhook: {e}, url={url}", exc_info=True)
             return False
     
-    def _generate_hmac_signature(self, json_body: str) -> str:
+    def _generate_hmac_signature(self, canonical_json_body: str) -> str:
         """
-        Генерировать HMAC-SHA256 подпись для тела запроса
+        Генерировать HMAC-SHA256 подпись для canonical JSON тела запроса
+        
+        Алгоритм:
+        1. canonical_json_body должен быть в canonical формате (ключи отсортированы, без пробелов)
+        2. Кодируем в UTF-8
+        3. Вычисляем HMAC-SHA256(secret, body)
+        4. Возвращаем hex строку
         
         Args:
-            json_body: JSON строка тела запроса
+            canonical_json_body: Canonical JSON строка тела запроса (UTF-8)
             
         Returns:
-            Hex строка подписи
+            Hex строка подписи (64 символа)
         """
         if not self._shared_secret:
             return ""
         
-        # HMAC-SHA256(shared_secret, json_body)
+        # HMAC-SHA256(shared_secret, canonical_json_body)
+        # Оба параметра кодируются в UTF-8
         signature = hmac.new(
             self._shared_secret.encode('utf-8'),
-            json_body.encode('utf-8'),
+            canonical_json_body.encode('utf-8'),
             hashlib.sha256
         ).hexdigest()
         

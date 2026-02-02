@@ -9,6 +9,8 @@
 5. [Тестирование](#тестирование)
 6. [Безопасность](#безопасность)
 7. [Troubleshooting](#troubleshooting)
+8. [Backend Webhook Integration](#backend-webhook-integration)
+9. [Конфигурация](#конфигурация)
 
 ---
 
@@ -38,11 +40,12 @@ sequenceDiagram
     participant BotAPI as Bot API
     participant TG as Telegram
     participant User
+    participant Backend as Backend (Java)
     
     Note over MiniApp,User: Способ 2: Invoice в Mini App (return_link=true)
     
-    MiniApp->>BotAPI: POST /api/payments/create-invoice<br/>{return_link: true}
-    BotAPI->>BotAPI: Валидация initData
+    MiniApp->>BotAPI: POST /api/payments/create-invoice<br/>{return_link: true, backend_webhook_url}
+    BotAPI->>BotAPI: Валидация initData<br/>Сохранение invoice с webhook URL
     BotAPI->>TG: create_invoice_link()
     TG->>BotAPI: invoice_link
     BotAPI->>MiniApp: {invoice_link: "..."}
@@ -50,9 +53,20 @@ sequenceDiagram
     MiniApp->>User: Показ формы оплаты внутри App
     User->>TG: Подтверждение оплаты
     TG->>BotAPI: PreCheckoutQuery (webhook)
+    BotAPI->>BotAPI: Проверка invoice в хранилище
     BotAPI->>TG: answer(ok=True)
     TG->>TG: Списание Stars
     TG->>BotAPI: SuccessfulPayment (webhook)
+    BotAPI->>BotAPI: Проверка идемпотентности<br/>Поиск invoice по payload
+    BotAPI->>BotAPI: Постановка webhook в очередь
+    BotAPI->>Backend: POST webhook<br/>+ HMAC подпись
+    alt Backend отвечает 2xx
+        Backend-->>BotAPI: 200 OK
+        BotAPI->>BotAPI: Статус invoice = confirmed
+    else Backend ошибка
+        Backend-->>BotAPI: Error
+        BotAPI->>BotAPI: Retry (до 3 попыток)
+    end
     TG->>MiniApp: Callback: status='paid'
     MiniApp->>MiniApp: Обновление UI
     BotAPI->>User: Уведомление в чат
@@ -73,7 +87,8 @@ sequenceDiagram
   "description": "Пакет на 10 генераций стикеров",
   "amount_stars": 100,
   "payload": "{\"package_id\": \"basic_10\"}",
-  "return_link": true  // 👈 Ключевой параметр!
+  "return_link": true,  // 👈 Ключевой параметр!
+  "backend_webhook_url": "https://backend.example.com/api/payments/telegram"  // 👈 Опционально: URL для уведомления backend
 }
 ```
 
@@ -113,6 +128,7 @@ Authorization: tma <initData>
 | `amount_stars` | int | Да | Количество Stars (> 0) |
 | `payload` | string | Да | Данные для идентификации платежа (макс. 128 символов) |
 | `return_link` | bool | Нет | `true` - вернуть ссылку, `false` - отправить в чат |
+| `backend_webhook_url` | string | Нет | URL для уведомления backend о платеже (только HTTPS) |
 
 ---
 
@@ -164,7 +180,8 @@ async function createAndPayInvoice(packageId, amountStars, title, description) {
           package_id: packageId,
           timestamp: Date.now()
         }),
-        return_link: true  // 👈 Важно!
+        return_link: true,  // 👈 Важно!
+        backend_webhook_url: 'https://your-backend.com/api/payments/telegram'  // 👈 Опционально: для уведомления backend
       })
     });
     
@@ -286,8 +303,29 @@ async function onPaymentSuccess(packageId) {
 ### 1. Тестирование через curl
 
 ```bash
-# Создание invoice с return_link
-curl -X POST http://localhost:80/api/payments/create-invoice \
+# Создание invoice с return_link и backend_webhook_url
+curl -X POST https://stixly-e13nst.amvera.io/api/payments/create-invoice \
+  -H "Content-Type: application/json" \
+  -H "Authorization: tma user=%7B%22id%22%3A141614461...%7D&hash=..." \
+  -d '{
+    "user_id": 141614461,
+    "title": "Тест",
+    "description": "Тестовый платеж",
+    "amount_stars": 1,
+    "payload": "test",
+    "return_link": true,
+    "backend_webhook_url": "https://webhook.site/your-unique-id"
+  }'
+
+# Ожидаемый ответ:
+# {
+#   "ok": true,
+#   "invoice_sent": false,
+#   "invoice_link": "https://t.me/$..."
+# }
+
+# Создание invoice БЕЗ backend_webhook_url (обратная совместимость)
+curl -X POST https://stixly-e13nst.amvera.io/api/payments/create-invoice \
   -H "Content-Type: application/json" \
   -H "Authorization: tma user=%7B%22id%22%3A141614461...%7D&hash=..." \
   -d '{
@@ -298,13 +336,6 @@ curl -X POST http://localhost:80/api/payments/create-invoice \
     "payload": "test",
     "return_link": true
   }'
-
-# Ожидаемый ответ:
-# {
-#   "ok": true,
-#   "invoice_sent": false,
-#   "invoice_link": "https://t.me/$..."
-# }
 ```
 
 ### 2. Тестирование в Mini App
@@ -339,9 +370,14 @@ tail -f logs/bot.log | grep -i payment
 
 # Вы увидите:
 # - "Creating invoice link: user_id=..."
+# - "Invoice stored: invoice_id=..."
 # - "Invoice link created successfully: ..."
 # - "PreCheckoutQuery received: ..."
+# - "Invoice validated: invoice_id=..."
 # - "SuccessfulPayment received: ..."
+# - "Payment marked as processed: charge_id=..."
+# - "Backend webhook notification queued: ..."
+# - "Webhook delivered successfully: ..."
 ```
 
 ---
@@ -389,13 +425,59 @@ payload: JSON.stringify({
 })
 ```
 
-В `handle_successful_payment` можете извлечь эти данные:
+**Важно:** Python-сервис автоматически оборачивает ваш payload в JSON с `invoice_id`:
+```json
+{
+  "invoice_id": "uuid-here",
+  "original_payload": "ваш_оригинальный_payload"
+}
+```
+
+В `handle_successful_payment` извлеките данные:
 
 ```python
 payload_data = json.loads(payment.invoice_payload)
-package_id = payload_data.get('package_id')
-# Активируйте пакет для пользователя
+original_payload = payload_data.get('original_payload', payment.invoice_payload)
+package_data = json.loads(original_payload)
+package_id = package_data.get('package_id')
 ```
+
+### 5. Backend Webhook (новое)
+
+Если указан `backend_webhook_url`, Python-сервис автоматически уведомит ваш backend после успешного платежа:
+
+**Формат webhook запроса:**
+```json
+{
+  "event": "telegram_stars_payment_succeeded",
+  "user_id": 141614461,
+  "amount_stars": 100,
+  "currency": "XTR",
+  "telegram_charge_id": "1234567890",
+  "invoice_payload": "{\"package_id\": \"basic_10\"}",
+  "timestamp": 1738500000,
+  "signature": "hmac_sha256_hex_string"
+}
+```
+
+**Заголовки:**
+- `X-Webhook-Signature`: HMAC-SHA256 подпись (если настроен `BACKEND_WEBHOOK_SECRET`)
+- `Content-Type`: application/json
+- `User-Agent`: StickerBot-WebhookNotifier/1.0
+
+**Backend должен:**
+1. Проверить HMAC подпись (если настроена)
+2. Обработать платеж (активировать тариф, начислить баланс и т.д.)
+3. Вернуть HTTP 2xx для подтверждения
+
+**Retry механизм:**
+- При ошибке backend: автоматический retry до 3 попыток
+- Exponential backoff: 1s, 2s, 4s
+- Если все попытки неудачны - платеж остается в статусе `pending_delivery`
+
+### 6. Идемпотентность платежей
+
+Python-сервис гарантирует, что каждый `telegram_payment_charge_id` обрабатывается **строго один раз**, даже если Telegram отправляет дублирующиеся webhook'и. Это предотвращает двойное списание или активацию тарифа.
 
 ---
 
@@ -451,6 +533,33 @@ const userId = Telegram.WebApp.initDataUnsafe.user.id;
 // Используйте этот userId в запросе
 ```
 
+### Проблема: "backend_webhook_url must use HTTPS protocol"
+
+**Причина:** Указан HTTP URL вместо HTTPS
+
+**Решение:**
+```json
+{
+  "backend_webhook_url": "https://backend.example.com/webhook"  // Используйте HTTPS
+}
+```
+
+### Проблема: "Backend webhook не доставляется"
+
+**Проверьте:**
+1. URL webhook доступен и принимает POST запросы
+2. `BACKEND_WEBHOOK_SECRET` установлен (для HMAC подписи)
+3. Backend правильно проверяет HMAC подпись
+4. Логи бота на наличие ошибок retry
+
+### Проблема: "Invoice не найден в хранилище"
+
+**Причина:** Invoice истек (TTL 24 часа) или не был сохранен
+
+**Решение:**
+- Invoice автоматически удаляется через 24 часа
+- Для production рекомендуется миграция на Redis/PostgreSQL (TODO в коде)
+
 ---
 
 ## Конфигурация
@@ -462,11 +571,29 @@ const userId = Telegram.WebApp.initDataUnsafe.user.id;
 PAYMENTS_ENABLED=true
 PAYMENT_INITDATA_MAX_AGE_SECONDS=3600
 
+# Webhook от Telegram (входящий)
+TELEGRAM_WEBHOOK_TOKEN=your_telegram_secret_token  # Токен для проверки входящих webhook от Telegram
+
+# Webhook к Backend (исходящий)
+BACKEND_WEBHOOK_SECRET=your_backend_hmac_secret  # Секрет для HMAC подписи запросов к backend
+BACKEND_WEBHOOK_RETRY_ATTEMPTS=3  # Количество попыток отправки webhook при ошибке
+BACKEND_WEBHOOK_TIMEOUT_SECONDS=10  # Таймаут HTTP запроса к backend
+INVOICE_TTL_HOURS=24  # Время хранения invoice в памяти (часы)
+
 # Rate limiting
 WEBHOOK_RATE_LIMIT=100/minute
 
 # API
 API_PORT=80
+```
+
+**Генерация секретов:**
+```bash
+# Для TELEGRAM_WEBHOOK_TOKEN
+python3 -c "import secrets; print(secrets.token_urlsafe(32))"
+
+# Для BACKEND_WEBHOOK_SECRET (HMAC)
+python3 -c "import secrets; print(secrets.token_hex(32))"
 ```
 
 ### Frontend (config.js)
@@ -513,5 +640,154 @@ const CONFIG = {
 
 ---
 
-**Версия документа:** 1.0  
-**Дата:** 2026-02-02
+---
+
+## Backend Webhook Integration
+
+### Формат уведомления
+
+После успешного платежа Python-сервис отправляет POST запрос на указанный `backend_webhook_url`:
+
+**URL:** `{backend_webhook_url}` (из запроса создания invoice)
+
+**Method:** POST
+
+**Headers:**
+```
+Content-Type: application/json
+X-Webhook-Signature: {hmac_sha256_hex}  # Если настроен BACKEND_WEBHOOK_SECRET
+User-Agent: StickerBot-WebhookNotifier/1.0
+```
+
+**Body (canonical JSON, ключи отсортированы, без пробелов):**
+```json
+{"amount_stars":100,"currency":"XTR","event":"telegram_stars_payment_succeeded","invoice_payload":"{\"package_id\": \"basic_10\"}","telegram_charge_id":"1234567890","timestamp":1738500000,"user_id":141614461}
+```
+
+**Примечание:** Подпись передается **только в заголовке** `X-Webhook-Signature`, не в теле запроса.
+
+### Проверка HMAC подписи (Java пример)
+
+**Важно:** Python-сервис использует **canonical JSON** для подписи:
+- Ключи отсортированы в алфавитном порядке
+- Без пробелов между элементами (`separators=(',', ':')`)
+- UTF-8 кодировка
+- `ensure_ascii=False` для корректной работы с Unicode
+
+Backend должен создать **точно такой же canonical JSON** для проверки подписи:
+
+```java
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import org.json.JSONObject;
+import java.util.Iterator;
+
+public boolean verifyWebhookSignature(
+    String receivedSignature, 
+    String requestBody, 
+    String secret
+) {
+    try {
+        // 1. Парсим JSON тело запроса
+        JSONObject json = new JSONObject(requestBody);
+        
+        // 2. Создаем canonical JSON (JSONObject автоматически сортирует ключи)
+        // Важно: используем toString() без форматирования (без пробелов)
+        String canonicalJson = json.toString();
+        
+        // 3. Вычисляем HMAC-SHA256 подпись
+        Mac sha256 = Mac.getInstance("HmacSHA256");
+        SecretKeySpec secretKey = new SecretKeySpec(
+            secret.getBytes(StandardCharsets.UTF_8), 
+            "HmacSHA256"
+        );
+        sha256.init(secretKey);
+        
+        byte[] hash = sha256.doFinal(
+            canonicalJson.getBytes(StandardCharsets.UTF_8)
+        );
+        String expectedSignature = bytesToHex(hash);
+        
+        // 4. Сравниваем подписи (защита от timing attacks)
+        return MessageDigest.isEqual(
+            receivedSignature.getBytes(StandardCharsets.UTF_8),
+            expectedSignature.getBytes(StandardCharsets.UTF_8)
+        );
+        
+    } catch (Exception e) {
+        // Логируем ошибку
+        logger.error("Error verifying webhook signature", e);
+        return false;
+    }
+}
+
+private String bytesToHex(byte[] bytes) {
+    StringBuilder result = new StringBuilder();
+    for (byte b : bytes) {
+        result.append(String.format("%02x", b));
+    }
+    return result.toString();
+}
+```
+
+**Пример использования в Spring Boot Controller:**
+
+```java
+@PostMapping("/api/payments/telegram")
+public ResponseEntity<?> handleWebhook(
+    @RequestBody String requestBody,
+    @RequestHeader(value = "X-Webhook-Signature", required = false) String signature
+) {
+    // 1. Проверка подписи
+    String secret = System.getenv("BACKEND_WEBHOOK_SECRET");
+    if (secret != null && !secret.isEmpty()) {
+        if (signature == null || !verifyWebhookSignature(signature, requestBody, secret)) {
+            return ResponseEntity.status(401).body("Invalid signature");
+        }
+    }
+    
+    // 2. Парсим payload
+    JSONObject payload = new JSONObject(requestBody);
+    String event = payload.getString("event");
+    
+    if ("telegram_stars_payment_succeeded".equals(event)) {
+        // 3. Обработка платежа
+        long userId = payload.getLong("user_id");
+        int amountStars = payload.getInt("amount_stars");
+        String chargeId = payload.getString("telegram_charge_id");
+        
+        // Активируем тариф, начисляем баланс и т.д.
+        processPayment(userId, amountStars, chargeId);
+        
+        // 4. Возвращаем успешный ответ
+        return ResponseEntity.ok().body("Payment processed");
+    }
+    
+    return ResponseEntity.badRequest().body("Unknown event");
+}
+```
+
+**Важные моменты:**
+
+1. **Canonical JSON:** Используйте `JSONObject.toString()` без форматирования - он автоматически сортирует ключи и убирает пробелы
+2. **UTF-8:** Всегда используйте UTF-8 кодировку для тела запроса и секрета
+3. **Timing attacks:** Используйте `MessageDigest.isEqual()` вместо `String.equals()` для сравнения подписей
+4. **Логирование:** Не логируйте секрет или подпись в открытом виде
+
+### Retry механизм
+
+Если backend возвращает ошибку (не 2xx):
+- **Попытка 1:** немедленно
+- **Попытка 2:** через 1 секунду
+- **Попытка 3:** через 2 секунды
+- **Попытка 4:** через 4 секунды (если настроено больше 3)
+
+После всех неудачных попыток платеж остается в статусе `pending_delivery` для ручной обработки.
+
+---
+
+**Версия документа:** 2.0  
+**Дата обновления:** 2026-02-02  
+**Изменения:** Добавлена поддержка backend webhook, HMAC подписи, идемпотентности платежей
