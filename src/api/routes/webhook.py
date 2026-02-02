@@ -3,7 +3,7 @@ import logging
 import secrets
 from fastapi import Request, HTTPException
 
-from src.config.settings import WEBHOOK_SECRET_TOKEN, WEBHOOK_IP_CHECK_ENABLED
+from src.config.settings import TELEGRAM_WEBHOOK_TOKEN, WEBHOOK_IP_CHECK_ENABLED
 from src.api.middleware.telegram_ip_check import verify_telegram_ip
 
 logger = logging.getLogger(__name__)
@@ -41,8 +41,8 @@ async def telegram_webhook(request: Request):
         logger.info(f"Проверка IP-адреса пройдена для: {client_ip}")
     
     # Проверка секретного токена (ОБЯЗАТЕЛЬНО)
-    if not WEBHOOK_SECRET_TOKEN:
-        logger.error("WEBHOOK_SECRET_TOKEN не настроен! Webhook небезопасен!")
+    if not TELEGRAM_WEBHOOK_TOKEN:
+        logger.error("TELEGRAM_WEBHOOK_TOKEN не настроен! Webhook небезопасен!")
         raise HTTPException(
             status_code=500,
             detail="Webhook secret token not configured"
@@ -59,7 +59,7 @@ async def telegram_webhook(request: Request):
     
     # Сравниваем токен из заголовка с сохраненным токеном
     # Используем secrets.compare_digest для защиты от timing attacks
-    if not secrets.compare_digest(x_telegram_bot_api_secret_token, WEBHOOK_SECRET_TOKEN):
+    if not secrets.compare_digest(x_telegram_bot_api_secret_token, TELEGRAM_WEBHOOK_TOKEN):
         logger.warning(
             f"Неверный секретный токен webhook от IP: {client_ip}, "
             f"получен токен: {x_telegram_bot_api_secret_token[:10] if len(x_telegram_bot_api_secret_token) > 10 else 'короткий'}..."

@@ -31,7 +31,7 @@ LOG_FILE_PATH = str(_log_path)
 
 # Webhook и API настройки
 SERVICE_BASE_URL = os.getenv('SERVICE_BASE_URL')
-WEBHOOK_SECRET_TOKEN = os.getenv('WEBHOOK_SECRET_TOKEN')
+TELEGRAM_WEBHOOK_TOKEN = os.getenv('TELEGRAM_WEBHOOK_TOKEN')
 WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
 WEBHOOK_RATE_LIMIT = os.getenv('WEBHOOK_RATE_LIMIT', '100/minute')
 WEBHOOK_IP_CHECK_ENABLED = os.getenv('WEBHOOK_IP_CHECK_ENABLED', 'false').lower() == 'true'
@@ -74,3 +74,13 @@ SUPPORT_CHAT_ID = os.getenv('SUPPORT_CHAT_ID')  # ID группы поддерж
 SUPPORT_ENABLED = os.getenv('SUPPORT_ENABLED', 'true').lower() == 'true'
 SUPPORT_USE_TOPICS = os.getenv('SUPPORT_USE_TOPICS', 'true').lower() == 'true'
 
+
+# Настройки платежей (Telegram Stars)
+PAYMENTS_ENABLED = os.getenv('PAYMENTS_ENABLED', 'false').lower() == 'true'
+PAYMENT_INITDATA_MAX_AGE_SECONDS = int(os.getenv('PAYMENT_INITDATA_MAX_AGE_SECONDS', '3600'))
+
+# Настройки payment webhook для уведомления backend
+BACKEND_WEBHOOK_SECRET = os.getenv('BACKEND_WEBHOOK_SECRET')  # Для HMAC подписи
+BACKEND_WEBHOOK_RETRY_ATTEMPTS = int(os.getenv('BACKEND_WEBHOOK_RETRY_ATTEMPTS', '3'))
+BACKEND_WEBHOOK_TIMEOUT_SECONDS = int(os.getenv('BACKEND_WEBHOOK_TIMEOUT_SECONDS', '10'))
+INVOICE_TTL_HOURS = int(os.getenv('INVOICE_TTL_HOURS', '24'))

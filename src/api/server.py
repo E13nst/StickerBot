@@ -6,6 +6,7 @@ from pydantic import BaseModel
 from slowapi.errors import RateLimitExceeded
 
 from src.api.routes.webhook import telegram_webhook, set_bot_instance as set_webhook_bot_instance
+from src.api.routes.payments import router as payments_router, set_bot_instance as set_payments_bot_instance
 from src.api.routes.control import (
     initialize as init_control,
     get_status,
@@ -37,6 +38,9 @@ app = FastAPI(
 # Настройка rate limiting
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# Подключаем payments router
+app.include_router(payments_router)
 
 # Middleware для логирования всех входящих запросов
 @app.middleware("http")
@@ -82,9 +86,10 @@ async def status_endpoint(token: str = Depends(get_token_from_header)):
 async def start_endpoint(token: str = Depends(get_token_from_header)):
     """Запустить бота"""
     result = await start_bot(token)
-    # Обновляем экземпляр бота в webhook
+    # Обновляем экземпляр бота в webhook и payments
     from src.api.routes.control import bot_instance
     set_webhook_bot_instance(bot_instance)
+    set_payments_bot_instance(bot_instance)
     return result
 
 
@@ -98,9 +103,10 @@ async def stop_endpoint(token: str = Depends(get_token_from_header)):
 async def mode_endpoint(request_mode: ModeRequest, token: str = Depends(get_token_from_header)):
     """Переключить режим работы бота"""
     result = await set_mode(request_mode, token)
-    # Обновляем экземпляр бота в webhook
+    # Обновляем экземпляр бота в webhook и payments
     from src.api.routes.control import bot_instance
     set_webhook_bot_instance(bot_instance)
+    set_payments_bot_instance(bot_instance)
     return result
 
 
