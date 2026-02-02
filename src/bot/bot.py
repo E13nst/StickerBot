@@ -35,7 +35,7 @@ from src.config.settings import (
     GALLERY_DEFAULT_LANGUAGE,
     LOG_FILE_PATH,
     SERVICE_BASE_URL,
-    WEBHOOK_SECRET_TOKEN,
+    TELEGRAM_WEBHOOK_TOKEN,
     WEBHOOK_PATH,
     MINIAPP_GALLERY_URL,
     MINIAPP_GENERATE_URL,
@@ -54,6 +54,11 @@ from src.config.settings import (
     STICKERSET_CACHE_CLEANUP_INTERVAL_HOURS,
     SUPPORT_CHAT_ID,
     SUPPORT_ENABLED,
+    PAYMENTS_ENABLED,
+    BACKEND_WEBHOOK_SECRET,
+    BACKEND_WEBHOOK_RETRY_ATTEMPTS,
+    BACKEND_WEBHOOK_TIMEOUT_SECONDS,
+    INVOICE_TTL_HOURS,
 )
 from src.services.sticker_service import StickerService
 from src.services.image_service import ImageService
@@ -105,6 +110,7 @@ from src.bot.handlers.generation import handle_regenerate_callback
 from src.bot.handlers.webapp import handle_webapp_query
 from src.bot.handlers.support import enter_support_mode, exit_support_mode, forward_to_support, forward_to_user, handle_support_topic_selection
 from src.bot.handlers.help import help_command
+from src.bot.handlers.payments import handle_pre_checkout_query, handle_successful_payment
 
 # Импорты для WaveSpeed generation
 from src.managers.wavespeed_client import WaveSpeedClient
@@ -118,6 +124,10 @@ from src.utils.quota import (
     QuotaConfig,
 )
 from src.utils.stickerset_cache import AsyncStickerSetCache
+
+# Импорты для платежей
+from src.utils.invoice_storage import InvoiceStore, PaymentIdempotencyStore
+from src.services.webhook_notifier import WebhookNotifier
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -189,6 +199,11 @@ class StickerBot:
             # #region agent log
             _debug_log("bot/bot.py:__init__:after_generation", "Компоненты генерации инициализированы", {}, "J")
             # #endregion
+
+            # Инициализация компонентов для платежей
+            if PAYMENTS_ENABLED:
+                self._init_payment_components()
+                logger.info("Payment components initialized")
 
             # #region agent log
             _debug_log("bot/bot.py:__init__:before_handlers", "Перед setup_handlers", {}, "J")
@@ -264,6 +279,33 @@ class StickerBot:
         self.application.bot_data["wavespeed_client"] = self.wavespeed_client
         self.application.bot_data["sticker_service"] = self.sticker_service
         # placeholder_sticker_file_id будет загружен при старте бота
+
+    def _init_payment_components(self):
+        """Инициализация компонентов для платежей через Telegram Stars"""
+        # InvoiceStore для хранения invoice
+        self.invoice_store = InvoiceStore(ttl_hours=INVOICE_TTL_HOURS)
+        
+        # PaymentIdempotencyStore для предотвращения дубликатов
+        self.payment_idempotency_store = PaymentIdempotencyStore(ttl_days=7)
+        
+        # WebhookNotifier для уведомления backend
+        self.webhook_notifier = WebhookNotifier(
+            shared_secret=BACKEND_WEBHOOK_SECRET,
+            timeout_seconds=BACKEND_WEBHOOK_TIMEOUT_SECONDS,
+            max_attempts=BACKEND_WEBHOOK_RETRY_ATTEMPTS
+        )
+        
+        # Сохраняем в bot_data для доступа из handlers
+        self.application.bot_data["invoice_store"] = self.invoice_store
+        self.application.bot_data["payment_idempotency_store"] = self.payment_idempotency_store
+        self.application.bot_data["webhook_notifier"] = self.webhook_notifier
+        
+        logger.info(
+            f"Payment components initialized: "
+            f"invoice_ttl={INVOICE_TTL_HOURS}h, "
+            f"webhook_retries={BACKEND_WEBHOOK_RETRY_ATTEMPTS}, "
+            f"hmac_enabled={bool(BACKEND_WEBHOOK_SECRET)}"
+        )
 
     @staticmethod
     def _validate_configuration():
@@ -610,6 +652,25 @@ class StickerBot:
             except (ValueError, TypeError) as e:
                 logger.warning(f"Не удалось добавить обработчик поддержки: SUPPORT_CHAT_ID='{SUPPORT_CHAT_ID}' не является валидным числом. Ошибка: {e}")
         
+        # Обработчики платежей (Telegram Stars)
+        if PAYMENTS_ENABLED:
+            from telegram.ext import PreCheckoutQueryHandler
+            
+            # Обработчик PreCheckoutQuery (перед списанием Stars)
+            self.application.add_handler(
+                PreCheckoutQueryHandler(handle_pre_checkout_query)
+            )
+            
+            # Обработчик успешного платежа
+            self.application.add_handler(
+                MessageHandler(
+                    filters.SUCCESSFUL_PAYMENT,
+                    handle_successful_payment
+                )
+            )
+            
+            logger.info("Payment handlers registered (Telegram Stars)")
+        
         self.application.add_error_handler(error_handler)
 
     async def _load_placeholder_sticker(self):
@@ -781,6 +842,11 @@ class StickerBot:
             await self.stickerset_cache.start_cleanup_task()
             logger.info("Sticker set cache cleanup task started")
             
+            # Запускаем webhook notifier если платежи включены
+            if PAYMENTS_ENABLED and hasattr(self, 'webhook_notifier'):
+                await self.webhook_notifier.start()
+                logger.info("Webhook notifier started")
+            
             # Удаляем webhook перед запуском polling
             logger.info("Удаление webhook перед запуском polling...")
             await self.application.bot.delete_webhook(drop_pending_updates=True)
@@ -788,7 +854,7 @@ class StickerBot:
             
             # Указываем allowed_updates для inline_query
             # web_app_query не поддерживается в allowed_updates, но handler все равно будет обрабатывать такие updates
-            allowed_updates = ["inline_query", "message", "callback_query"]
+            allowed_updates = ["inline_query", "message", "callback_query", "pre_checkout_query"]
             logger.info(f"Starting polling with allowed_updates={allowed_updates}")
             await self.application.updater.start_polling(allowed_updates=allowed_updates)
             
@@ -831,6 +897,11 @@ class StickerBot:
             await self.stickerset_cache.start_cleanup_task()
             logger.info("Sticker set cache cleanup task started")
             
+            # Запускаем webhook notifier если платежи включены
+            if PAYMENTS_ENABLED and hasattr(self, 'webhook_notifier'):
+                await self.webhook_notifier.start()
+                logger.info("Webhook notifier started")
+            
             # Устанавливаем экземпляр бота в webhook endpoint после инициализации
             # чтобы гарантировать, что application полностью готов
             from src.api.routes.webhook import set_bot_instance as set_webhook_bot_instance
@@ -843,28 +914,28 @@ class StickerBot:
             full_webhook_url = f"{SERVICE_BASE_URL.rstrip('/')}{webhook_path}"
             
             # Проверяем наличие секретного токена
-            if not WEBHOOK_SECRET_TOKEN:
+            if not TELEGRAM_WEBHOOK_TOKEN:
                 logger.warning(
-                    "WEBHOOK_SECRET_TOKEN не установлен! "
+                    "TELEGRAM_WEBHOOK_TOKEN не установлен! "
                     "Webhook будет работать без защиты. Рекомендуется установить токен."
                 )
                 result = await self.application.bot.set_webhook(
                     url=full_webhook_url,
-                    allowed_updates=["inline_query", "message", "callback_query"]  # web_app_query не поддерживается в allowed_updates
+                    allowed_updates=["inline_query", "message", "callback_query", "pre_checkout_query"]  # web_app_query не поддерживается в allowed_updates
                 )
-                logger.info(f"Результат установки webhook: {result}, allowed_updates=['inline_query', 'message', 'callback_query']")
+                logger.info(f"Результат установки webhook: {result}, allowed_updates=['inline_query', 'message', 'callback_query', 'pre_checkout_query']")
             else:
                 # Устанавливаем webhook с секретным токеном
                 # allowed_updates по умолчанию включает все типы, включая inline_query
                 result = await self.application.bot.set_webhook(
                     url=full_webhook_url,
-                    secret_token=WEBHOOK_SECRET_TOKEN,
-                    allowed_updates=["inline_query", "message", "callback_query"]  # web_app_query не поддерживается в allowed_updates
+                    secret_token=TELEGRAM_WEBHOOK_TOKEN,
+                    allowed_updates=["inline_query", "message", "callback_query", "pre_checkout_query"]  # web_app_query не поддерживается в allowed_updates
                 )
                 logger.info(
                     f"Webhook установлен: {full_webhook_url} "
-                    f"с секретным токеном (первые 10 символов): {WEBHOOK_SECRET_TOKEN[:10]}... "
-                    f"allowed_updates=['inline_query', 'message', 'callback_query']"
+                    f"с секретным токеном (первые 10 символов): {TELEGRAM_WEBHOOK_TOKEN[:10]}... "
+                    f"allowed_updates=['inline_query', 'message', 'callback_query', 'pre_checkout_query']"
                 )
                 logger.info(f"Результат установки webhook: {result}")
             
@@ -940,6 +1011,14 @@ class StickerBot:
                     await self.wavespeed_client.close()
                 except Exception as e:
                     logger.warning(f"Error closing WaveSpeedClient: {e}")
+            
+            # Останавливаем webhook notifier если есть
+            if hasattr(self, 'webhook_notifier') and self.webhook_notifier:
+                try:
+                    await self.webhook_notifier.stop()
+                    logger.info("Webhook notifier stopped")
+                except Exception as e:
+                    logger.warning(f"Error stopping webhook notifier: {e}")
             
             if self.application.updater.running:
                 await self.application.updater.stop()
