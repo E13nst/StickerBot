@@ -85,3 +85,16 @@ SUPPORT_USE_TOPICS = os.getenv('SUPPORT_USE_TOPICS', 'true').lower() == 'true'
 # Настройки платежей (Telegram Stars)
 PAYMENTS_ENABLED = os.getenv('PAYMENTS_ENABLED', 'false').lower() == 'true'
 PAYMENT_INITDATA_MAX_AGE_SECONDS = int(os.getenv('PAYMENT_INITDATA_MAX_AGE_SECONDS', '3600'))
+
+# Настройки payment webhook для уведомления backend
+# Секрет для HMAC-SHA256 подписи исходящих webhook-запросов к backend
+BACKEND_WEBHOOK_SECRET = os.getenv('BACKEND_WEBHOOK_SECRET')
+
+# Количество попыток отправки webhook при ошибке (retry)
+BACKEND_WEBHOOK_RETRY_ATTEMPTS = int(os.getenv('BACKEND_WEBHOOK_RETRY_ATTEMPTS', '3'))
+
+# Таймаут HTTP-запроса к backend в секундах
+BACKEND_WEBHOOK_TIMEOUT_SECONDS = int(os.getenv('BACKEND_WEBHOOK_TIMEOUT_SECONDS', '10'))
+
+# Время жизни invoice в in-memory хранилище (часы)
+INVOICE_TTL_HOURS = int(os.getenv('INVOICE_TTL_HOURS', '24'))
