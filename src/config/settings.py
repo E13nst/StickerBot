@@ -31,7 +31,15 @@ LOG_FILE_PATH = str(_log_path)
 
 # Webhook и API настройки
 SERVICE_BASE_URL = os.getenv('SERVICE_BASE_URL')
+
+# Историческое имя переменной для секретного токена webhook от Telegram
 WEBHOOK_SECRET_TOKEN = os.getenv('WEBHOOK_SECRET_TOKEN')
+
+# Новое, более явное имя (используется в коде)
+# Для обратной совместимости сначала пробуем TELEGRAM_WEBHOOK_TOKEN,
+# затем WEBHOOK_SECRET_TOKEN, если новое имя не задано.
+TELEGRAM_WEBHOOK_TOKEN = os.getenv('TELEGRAM_WEBHOOK_TOKEN') or WEBHOOK_SECRET_TOKEN
+
 WEBHOOK_PATH = os.getenv('WEBHOOK_PATH', '/webhook')
 WEBHOOK_RATE_LIMIT = os.getenv('WEBHOOK_RATE_LIMIT', '100/minute')
 WEBHOOK_IP_CHECK_ENABLED = os.getenv('WEBHOOK_IP_CHECK_ENABLED', 'false').lower() == 'true'
