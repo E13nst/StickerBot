@@ -24,7 +24,7 @@ def test_create_invoice_with_webhook(init_data: str):
     print("\n🔍 Тест создания invoice с backend_webhook_url...")
     
     headers = {
-        "Authorization": f"tma {init_data}",
+        "X-Telegram-Init-Data": init_data,
         "Content-Type": "application/json"
     }
     
@@ -57,7 +57,7 @@ def test_create_invoice_without_webhook(init_data: str):
     print("\n🔍 Тест обратной совместимости (без backend_webhook_url)...")
     
     headers = {
-        "Authorization": f"tma {init_data}",
+        "X-Telegram-Init-Data": init_data,
         "Content-Type": "application/json"
     }
     
@@ -87,7 +87,7 @@ def test_invalid_webhook_url(init_data: str):
     print("\n🔍 Тест невалидного webhook URL (должен быть отклонен)...")
     
     headers = {
-        "Authorization": f"tma {init_data}",
+        "X-Telegram-Init-Data": init_data,
         "Content-Type": "application/json"
     }
     

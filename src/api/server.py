@@ -150,13 +150,18 @@ def custom_openapi():
         description=app.description,
         routes=app.routes,
     )
-    # Добавляем security схему
+    # Добавляем security схемы
     openapi_schema["components"]["securitySchemes"] = {
-        "Bearer": {
+        "BearerAuth": {
             "type": "http",
             "scheme": "bearer",
-            "bearerFormat": "JWT",
-            "description": "Введите ваш API токен"
+            "description": "API токен для управления ботом (Control API)"
+        },
+        "TelegramInitData": {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-Telegram-Init-Data",
+            "description": "Telegram Web App initialization data (из window.Telegram.WebApp.initData)"
         }
     }
     # Добавляем security ко всем защищенным эндпоинтам и убираем лишние параметры
@@ -167,13 +172,29 @@ def custom_openapi():
                     method_item = path_item[method]
                     # Добавляем security
                     if "security" not in method_item:
-                        method_item["security"] = [{"Bearer": []}]
+                        method_item["security"] = [{"BearerAuth": []}]
                     # Убираем лишние параметры (scheme, credentials, Authorization)
                     # так как они должны быть только в security схеме
                     if "parameters" in method_item:
                         method_item["parameters"] = [
                             p for p in method_item["parameters"]
                             if p.get("name") not in ["scheme", "credentials", "Authorization"]
+                        ]
+                        # Если параметров не осталось, удаляем ключ
+                        if not method_item["parameters"]:
+                            del method_item["parameters"]
+        elif path.startswith("/api/payments"):
+            for method in path_item:
+                if method in ["get", "post", "put", "delete", "patch"]:
+                    method_item = path_item[method]
+                    # Добавляем security для payments endpoints
+                    if "security" not in method_item:
+                        method_item["security"] = [{"TelegramInitData": []}]
+                    # Убираем лишние параметры (X-Telegram-Init-Data должен быть только в security)
+                    if "parameters" in method_item:
+                        method_item["parameters"] = [
+                            p for p in method_item["parameters"]
+                            if p.get("name") not in ["X-Telegram-Init-Data", "x_telegram_init_data"]
                         ]
                         # Если параметров не осталось, удаляем ключ
                         if not method_item["parameters"]:

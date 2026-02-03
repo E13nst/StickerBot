@@ -102,7 +102,7 @@ class CreateInvoiceResponse(BaseModel):
 async def create_invoice(
     request: Request,
     invoice_request: CreateInvoiceRequest,
-    authorization: Optional[str] = Header(None)
+    x_telegram_init_data: Optional[str] = Header(None, alias="X-Telegram-Init-Data")
 ):
     """
     Создает invoice для оплаты через Telegram Stars.
@@ -110,7 +110,7 @@ async def create_invoice(
     Вызывается из Mini App когда пользователь хочет совершить покупку.
     
     Headers:
-        Authorization: tma <initData> - данные из Telegram.WebApp.initData
+        X-Telegram-Init-Data: данные из Telegram.WebApp.initData
     
     Returns:
         CreateInvoiceResponse с результатом операции
@@ -139,29 +139,18 @@ async def create_invoice(
             detail="Bot not initialized"
         )
     
-    # Валидация Authorization header
-    if not authorization:
-        logger.warning(f"create_invoice called without Authorization header, IP={client_ip}")
+    # Валидация X-Telegram-Init-Data header
+    if not x_telegram_init_data:
+        logger.warning(f"create_invoice called without X-Telegram-Init-Data header, IP={client_ip}")
         raise HTTPException(
             status_code=401,
-            detail="Missing Authorization header"
+            detail="Missing X-Telegram-Init-Data header"
         )
-    
-    # Проверяем формат: "tma <initData>"
-    auth_parts = authorization.split(' ', 1)
-    if len(auth_parts) != 2 or auth_parts[0].lower() != 'tma':
-        logger.warning(f"Invalid Authorization header format, IP={client_ip}")
-        raise HTTPException(
-            status_code=401,
-            detail="Invalid Authorization header format. Expected: 'tma <initData>'"
-        )
-    
-    init_data = auth_parts[1]
     
     # Валидация initData
     try:
         validated_data = validate_telegram_init_data(
-            init_data=init_data,
+            init_data=x_telegram_init_data,
             bot_token=BOT_TOKEN,
             max_age_seconds=PAYMENT_INITDATA_MAX_AGE_SECONDS
         )

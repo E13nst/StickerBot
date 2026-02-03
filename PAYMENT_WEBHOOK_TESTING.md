@@ -89,7 +89,7 @@ python test_payment_webhook.py
 ```bash
 # Замените YOUR_INIT_DATA и YOUR_WEBHOOK_URL
 curl -X POST https://stixly-e13nst.amvera.io/api/payments/create-invoice \
-  -H "Authorization: tma YOUR_INIT_DATA" \
+  -H "X-Telegram-Init-Data: YOUR_INIT_DATA" \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": 141614461,
@@ -119,7 +119,7 @@ curl -X POST https://stixly-e13nst.amvera.io/api/payments/create-invoice \
 
 ```bash
 curl -X POST https://stixly-e13nst.amvera.io/api/payments/create-invoice \
-  -H "Authorization: tma YOUR_INIT_DATA" \
+  -H "X-Telegram-Init-Data: YOUR_INIT_DATA" \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": 141614461,
@@ -143,7 +143,7 @@ curl -X POST https://stixly-e13nst.amvera.io/api/payments/create-invoice \
 
 ```bash
 curl -X POST https://stixly-e13nst.amvera.io/api/payments/create-invoice \
-  -H "Authorization: tma YOUR_INIT_DATA" \
+  -H "X-Telegram-Init-Data: YOUR_INIT_DATA" \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": 141614461,
@@ -177,7 +177,7 @@ curl -X POST https://stixly-e13nst.amvera.io/api/payments/create-invoice \
 1. **Создать invoice с webhook:**
 ```bash
 curl -X POST https://stixly-e13nst.amvera.io/api/payments/create-invoice \
-  -H "Authorization: tma YOUR_INIT_DATA" \
+  -H "X-Telegram-Init-Data: YOUR_INIT_DATA" \
   -H "Content-Type: application/json" \
   -d '{
     "user_id": YOUR_USER_ID,

@@ -95,7 +95,7 @@ sequenceDiagram
 **Headers:**
 ```
 Content-Type: application/json
-Authorization: tma <initData>
+X-Telegram-Init-Data: <initData>
 ```
 
 #### Response
@@ -169,7 +169,7 @@ async function createAndPayInvoice(packageId, amountStars, title, description) {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        'Authorization': `tma ${initData}`
+        'X-Telegram-Init-Data': initData
       },
       body: JSON.stringify({
         user_id: userId,
@@ -280,7 +280,7 @@ async function onPaymentSuccess(packageId) {
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
-      'Authorization': `tma ${Telegram.WebApp.initData}`
+      'X-Telegram-Init-Data': Telegram.WebApp.initData
     },
     body: JSON.stringify({
       package_id: packageId,
@@ -306,7 +306,7 @@ async function onPaymentSuccess(packageId) {
 # Создание invoice с return_link и backend_webhook_url
 curl -X POST https://stixly-e13nst.amvera.io/api/payments/create-invoice \
   -H "Content-Type: application/json" \
-  -H "Authorization: tma user=%7B%22id%22%3A141614461...%7D&hash=..." \
+  -H "X-Telegram-Init-Data: user=%7B%22id%22%3A141614461...%7D&hash=..." \
   -d '{
     "user_id": 141614461,
     "title": "Тест",
@@ -327,7 +327,7 @@ curl -X POST https://stixly-e13nst.amvera.io/api/payments/create-invoice \
 # Создание invoice БЕЗ backend_webhook_url (обратная совместимость)
 curl -X POST https://stixly-e13nst.amvera.io/api/payments/create-invoice \
   -H "Content-Type: application/json" \
-  -H "Authorization: tma user=%7B%22id%22%3A141614461...%7D&hash=..." \
+  -H "X-Telegram-Init-Data: user=%7B%22id%22%3A141614461...%7D&hash=..." \
   -d '{
     "user_id": 141614461,
     "title": "Тест",
@@ -508,7 +508,7 @@ PAYMENTS_ENABLED=true
 **Решение:**
 ```javascript
 headers: {
-  'Authorization': `tma ${Telegram.WebApp.initData}`
+  'X-Telegram-Init-Data': Telegram.WebApp.initData
 }
 ```
 
