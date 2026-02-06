@@ -292,7 +292,8 @@ class StickerBot:
         self.webhook_notifier = WebhookNotifier(
             shared_secret=BACKEND_WEBHOOK_SECRET,
             timeout_seconds=BACKEND_WEBHOOK_TIMEOUT_SECONDS,
-            max_attempts=BACKEND_WEBHOOK_RETRY_ATTEMPTS
+            max_attempts=BACKEND_WEBHOOK_RETRY_ATTEMPTS,
+            service_token=GALLERY_SERVICE_TOKEN,
         )
         
         # Сохраняем в bot_data для доступа из handlers

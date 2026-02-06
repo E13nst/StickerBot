@@ -35,7 +35,8 @@ class WebhookNotifier:
         self,
         shared_secret: Optional[str] = None,
         timeout_seconds: int = 10,
-        max_attempts: int = 3
+        max_attempts: int = 3,
+        service_token: Optional[str] = None,
     ):
         """
         Args:
@@ -46,6 +47,7 @@ class WebhookNotifier:
         self._shared_secret = shared_secret
         self._timeout = timeout_seconds
         self._max_attempts = max_attempts
+        self._service_token = service_token
         self._queue: asyncio.Queue = asyncio.Queue()
         self._worker_task: Optional[asyncio.Task] = None
         self._shutdown_event = asyncio.Event()
@@ -56,7 +58,8 @@ class WebhookNotifier:
         logger.info(
             f"WebhookNotifier initialized: "
             f"timeout={timeout_seconds}s, max_attempts={max_attempts}, "
-            f"hmac_enabled={bool(shared_secret)}"
+            f"hmac_enabled={bool(shared_secret)}, "
+            f"service_token_configured={bool(service_token)}"
         )
     
     async def start(self):
@@ -287,12 +290,13 @@ class WebhookNotifier:
             # Сериализуем payload в canonical JSON
             canonical_json_body = self._canonical_json(payload)
             
-            # Генерируем HMAC подпись если есть secret
+            # Подготавливаем базовые заголовки
             headers = {
                 "Content-Type": "application/json; charset=utf-8",
-                "User-Agent": "StickerBot-WebhookNotifier/1.0"
+                "User-Agent": "StickerBot-WebhookNotifier/1.0",
             }
-            
+
+            # Генерируем HMAC подпись если есть secret
             if self._shared_secret:
                 signature = self._generate_hmac_signature(canonical_json_body)
                 headers["X-Webhook-Signature"] = signature
@@ -301,6 +305,10 @@ class WebhookNotifier:
                     f"payload_keys={sorted(payload.keys())}, "
                     f"signature_preview={signature[:16]}..."
                 )
+
+            # Добавляем сервисный токен для Java backend, если он настроен
+            if self._service_token:
+                headers["X-Service-Token"] = self._service_token
             
             # Отправляем запрос
             logger.debug(f"Sending webhook POST to {url}")

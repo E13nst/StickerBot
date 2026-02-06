@@ -44,20 +44,23 @@ signature = _generate_hmac_signature(canonical_json, secret)
 # Результат: "a1b2c3d4e5f6..." (64 hex символа)
 ```
 
-### 3. Заголовок X-Webhook-Signature
+### 3. Заголовки X-Webhook-Signature и X-Service-Token
 
 **Реализация:**
 ```python
 headers = {
     "Content-Type": "application/json; charset=utf-8",
     "User-Agent": "StickerBot-WebhookNotifier/1.0",
-    "X-Webhook-Signature": signature  # HMAC подпись
+    "X-Webhook-Signature": signature,      # HMAC подпись (если BACKEND_WEBHOOK_SECRET настроен)
+    "X-Service-Token": service_token,      # сервисный токен для Java backend (GALLERY_SERVICE_TOKEN)
 }
 ```
 
 **Важно:**
 - Подпись передается **только в заголовке**, не в теле запроса
-- Заголовок добавляется только если `BACKEND_WEBHOOK_SECRET` настроен
+- Заголовок `X-Webhook-Signature` добавляется только если `BACKEND_WEBHOOK_SECRET` настроен
+- Заголовок `X-Service-Token` добавляется только если в конструктор `WebhookNotifier` передан `service_token`  
+  (в бою туда пробрасывается `GALLERY_SERVICE_TOKEN`, чтобы авторизоваться на всех `/api/internal/**` endpoint-ах Java backend)
 
 ### 4. Retry механизм
 
