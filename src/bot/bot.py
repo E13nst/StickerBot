@@ -474,10 +474,10 @@ class StickerBot:
             )
 
         async def wrapped_handle_sticker_before_start(update, context):
-            """Обработчик стикеров до начала диалога (/start)"""
+            """Стикер в ЛС до /start: предложение добавить набор в галерею. Guard — не перехватывать активный create/add_existing."""
             user_data = context.user_data
             
-            # Не обрабатываем стикеры, если пользователь в процессе создания или обновления стикерпака
+            # Не перехватывать, если пользователь в процессе создания или добавления в существующий стикерпак
             action = user_data.get('action')
             if action in ('create_new', 'add_existing'):
                 # Пропускаем обработку, пусть ConversationHandler обработает
@@ -521,15 +521,20 @@ class StickerBot:
         async def wrapped_handle_support_topic_selection(update, context):
             return await handle_support_topic_selection(update, context)
 
+        # Entry points: /start и /support должны устанавливать conversation state,
+        # чтобы callback'и поддержки (support_topic:*, exit_support) обрабатывались.
         conv_handler = ConversationHandler(
-            entry_points=[CommandHandler('start', wrapped_start)],
+            entry_points=[
+                CommandHandler('start', wrapped_start),
+                CommandHandler('support', wrapped_enter_support),
+            ],
             states={
                 CHOOSING_ACTION: [
                     MessageHandler(filters.Regex('^(Создать новый стикерсет)$'), wrapped_create_new_set),
                     MessageHandler(filters.Regex('^(Добавить в существующий)$'), wrapped_add_to_existing),
                     MessageHandler(filters.Regex('^(Управлять публикацией)$'), wrapped_manage_publication),
                     MessageHandler(filters.Sticker.ALL, wrapped_handle_sticker_in_main_menu),
-                    CallbackQueryHandler(wrapped_handle_add_to_gallery, pattern='^add_to_gallery:'),
+                    # add_to_gallery обрабатывается в fallbacks (любое состояние) и на уровне application (вне conversation)
                     CallbackQueryHandler(wrapped_handle_manage_stickers_menu, pattern='^manage_stickers_menu$'),
                     CallbackQueryHandler(wrapped_handle_back_to_main, pattern='^back_to_main$'),
                     CallbackQueryHandler(wrapped_handle_manage_callback, pattern='^manage:(create_new|add_existing|publication)$'),
@@ -582,26 +587,26 @@ class StickerBot:
             },
             fallbacks=[
                 CommandHandler('cancel', cancel),
-                # Добавляем обработчик кнопки в fallbacks, чтобы он срабатывал в любом состоянии
+                # add_to_gallery: внутри conversation — единственный путь (любое состояние). Вне conversation — см. handler ниже.
                 CallbackQueryHandler(wrapped_handle_add_to_gallery, pattern='^add_to_gallery:'),
             ],
             allow_reentry=True
         )
 
-        # Сначала добавляем ConversationHandler, чтобы он получал стикеры первым
+        # ИНВАРИАНТ: порядок регистрации критичен для sticker-first в ЛС.
+        # 1) ConversationHandler первым — перехватывает стикеры в активном диалоге (CHOOSING_ACTION и др.).
+        # 2) sticker_handler_before_start вторым — обрабатывает стикер в ЛС до /start (предложение добавить в галерею).
+        # Не менять порядок: иначе стикер до /start не приведёт к предложению добавить набор.
         self.application.add_handler(conv_handler)
         
-        # Добавляем обработчик стикеров для нулевого состояния (до /start)
-        # Этот обработчик добавляется ПОСЛЕ ConversationHandler, чтобы ConversationHandler
-        # получал стикеры первым, когда пользователь в активном диалоге
         sticker_handler_before_start = MessageHandler(
             filters.Sticker.ALL,
             wrapped_handle_sticker_before_start
         )
         self.application.add_handler(sticker_handler_before_start)
         
-        # Обработчик кнопки "Добавить в галерею" на уровне application,
-        # чтобы он срабатывал независимо от состояния ConversationHandler
+        # add_to_gallery вне conversation: пользователь прислал стикер до /start и нажал «Добавить в галерею».
+        # ConversationHandler не имеет состояния для такого пользователя — обрабатываем здесь.
         add_to_gallery_handler = CallbackQueryHandler(
             wrapped_handle_add_to_gallery,
             pattern='^add_to_gallery:'
@@ -632,12 +637,8 @@ class StickerBot:
             )
             self.application.add_handler(regen_handler)
         
-        # Обработчики поддержки (вне ConversationHandler)
-        # Команда /help (доступна всегда)
+        # /help доступна всегда вне conversation; /support обрабатывается через entry_points выше.
         self.application.add_handler(CommandHandler("help", help_command))
-        
-        # Команда /support (быстрый вход в режим поддержки)
-        self.application.add_handler(CommandHandler("support", wrapped_enter_support))
         
         # Обработчик ответов из чата поддержки
         if SUPPORT_ENABLED and SUPPORT_CHAT_ID:

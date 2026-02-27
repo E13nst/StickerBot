@@ -37,6 +37,9 @@ SUPPORT_TOPICS = {
 
 async def enter_support_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Вход в режим поддержки - показываем выбор темы обращения"""
+    user_id = update.effective_user.id if update.effective_user else None
+    entry = "callback" if update.callback_query else "command"
+    logger.info("support_nav: enter_support_mode user_id=%s entry=%s", user_id, entry)
     if not SUPPORT_ENABLED or not SUPPORT_CHAT_ID:
         text = "📞 Функция поддержки временно недоступна."
         if update.callback_query:
@@ -76,13 +79,15 @@ async def enter_support_mode(update: Update, context: ContextTypes.DEFAULT_TYPE)
             reply_markup=keyboard,
             parse_mode='Markdown'
         )
-    
+    logger.info("support_nav: -> CHOOSING_SUPPORT_TOPIC user_id=%s", user_id)
     return CHOOSING_SUPPORT_TOPIC
 
 
 async def exit_support_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Выход из режима поддержки"""
     query = update.callback_query
+    user_id = update.effective_user.id if update.effective_user else None
+    logger.info("support_nav: exit_support_mode user_id=%s", user_id)
     await query.answer()
     
     # Очищаем флаг режима поддержки и выбранную тему
@@ -132,17 +137,19 @@ async def exit_support_mode(update: Update, context: ContextTypes.DEFAULT_TYPE) 
         reply_markup=main_menu_keyboard(),
         parse_mode='HTML'
     )
-    
+    logger.info("support_nav: -> CHOOSING_ACTION (exit) user_id=%s", user_id)
     return CHOOSING_ACTION
 
 
 async def handle_support_topic_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> int:
     """Обработка выбора темы обращения"""
     query = update.callback_query
+    user_id = update.effective_user.id if update.effective_user else None
+    topic_type = query.data.split(':')[1] if ':' in query.data else ""
+    logger.info("support_nav: topic_selected user_id=%s topic_type=%s", user_id, topic_type)
     await query.answer()
     
     # Извлекаем тип темы из callback_data
-    topic_type = query.data.split(':')[1]
     
     if topic_type not in SUPPORT_TOPICS:
         await query.edit_message_text("❌ Неверная тема обращения.")
@@ -177,7 +184,7 @@ async def handle_support_topic_selection(update: Update, context: ContextTypes.D
         reply_markup=keyboard,
         parse_mode='Markdown'
     )
-    
+    logger.info("support_nav: -> SUPPORT_MODE user_id=%s topic_type=%s", user_id, topic_type)
     return SUPPORT_MODE
 
 
