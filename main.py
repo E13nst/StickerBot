@@ -12,6 +12,7 @@ from src.api.server import app
 from src.api.routes.control import set_bot_instance, set_bot_task, bot_instance, bot_task
 from src.api.routes.webhook import set_bot_instance as set_webhook_bot_instance
 from src.api.routes.payments import set_bot_instance as set_payments_bot_instance
+from src.api.routes.messages import set_bot_instance as set_messages_bot_instance
 from src.bot.bot import StickerBot
 import uvicorn
 
@@ -84,9 +85,10 @@ async def start_bot_if_enabled():
         _debug_log("main.py:start_bot_if_enabled:after_bot_init", "StickerBot создан", {}, "B")
         # #endregion
         set_bot_instance(bot_inst)
-        # Также устанавливаем экземпляр в webhook endpoint и payments
+        # Также устанавливаем экземпляр в webhook endpoint, payments и messages
         set_webhook_bot_instance(bot_inst)
         set_payments_bot_instance(bot_inst)
+        set_messages_bot_instance(bot_inst)
         # #region agent log
         _debug_log("main.py:start_bot_if_enabled:before_task", "Перед созданием задачи", {"mode": mode}, "B")
         # #endregion
@@ -128,9 +130,10 @@ async def stop_bot():
         
         set_bot_task(None)
         set_bot_instance(None)
-        # Очищаем экземпляр в webhook endpoint и payments
+        # Очищаем экземпляр в webhook endpoint, payments и messages
         set_webhook_bot_instance(None)
         set_payments_bot_instance(None)
+        set_messages_bot_instance(None)
 
 
 def run_api_server_thread():
