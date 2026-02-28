@@ -4,7 +4,7 @@ from typing import Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
-from telegram.error import TelegramError
+from telegram.error import Forbidden, TelegramError
 
 from src.api.routes.control import get_token_from_header
 from src.api.middleware.rate_limit import limiter
@@ -93,7 +93,9 @@ async def send_message(
     - **chat_id** — отправка в группу/канал (бот должен состоять в чате).
     - **parse_mode**: MarkdownV2 (рекомендуется), HTML или plain.
 
-    При ошибке Telegram API возвращается 502/503 с кратким описанием.
+    При ошибке Telegram API:
+    - 403 — если бот заблокирован пользователем или у бота нет доступа к чату.
+    - 502/503 — прочие ошибки Telegram API.
     """
     if not bot_instance or not getattr(bot_instance, "application", None):
         logger.warning("send_message called but bot not initialized")
@@ -122,6 +124,18 @@ async def send_message(
             send_kwargs["parse_mode"] = parse_mode_value
 
         message = await bot_instance.application.bot.send_message(**send_kwargs)
+    except Forbidden as e:
+        error_msg = str(e)
+        logger.warning(
+            "Forbidden sending message: %s, target_chat_id=%s",
+            error_msg,
+            target_chat_id,
+            exc_info=True,
+        )
+        raise HTTPException(
+            status_code=403,
+            detail="Cannot send message: user blocked bot or bot has no access to the chat",
+        )
     except TelegramError as e:
         error_msg = str(e)
         logger.error(
