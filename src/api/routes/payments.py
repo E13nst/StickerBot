@@ -95,6 +95,41 @@ class CreateInvoiceResponse(BaseModel):
     invoice_sent: bool = False
     invoice_link: Optional[str] = None
     error: Optional[str] = None
+    error_code: Optional[str] = None
+    error_details: Optional[str] = None
+
+
+def map_telegram_invoice_error(error_msg: str, payload_bytes: int) -> tuple[str, str, str]:
+    """
+    Нормализует Telegram ошибки для понятного ответа клиенту.
+
+    Returns:
+        (error_code, error, error_details)
+    """
+    error_lower = error_msg.lower()
+
+    if "invoice_payload_invalid" in error_lower:
+        return (
+            "INVOICE_PAYLOAD_INVALID",
+            "Telegram rejected invoice payload.",
+            (
+                "Invoice payload is invalid. For Telegram payments payload must be short "
+                f"(up to 128 bytes). Current payload is {payload_bytes} bytes."
+            )
+        )
+
+    if "bot_precheckout_timeout" in error_lower:
+        return (
+            "PRECHECKOUT_TIMEOUT",
+            "Telegram pre-checkout timed out.",
+            "Payment confirmation took too long. Please try again."
+        )
+
+    return (
+        "TELEGRAM_API_ERROR",
+        "Failed to create Telegram invoice.",
+        error_msg
+    )
 
 
 @router.post("/create-invoice", response_model=CreateInvoiceResponse)
@@ -288,6 +323,10 @@ async def create_invoice(
         
     except TelegramError as e:
         error_msg = str(e)
+        error_code, client_error, error_details = map_telegram_invoice_error(
+            error_msg=error_msg,
+            payload_bytes=len(combined_payload.encode("utf-8"))
+        )
         logger.error(
             f"Telegram error sending invoice: {error_msg}, "
             f"user_id={invoice_request.user_id}",
@@ -298,7 +337,9 @@ async def create_invoice(
         return CreateInvoiceResponse(
             ok=False,
             invoice_sent=False,
-            error=f"Failed to send invoice: {error_msg}"
+            error=client_error,
+            error_code=error_code,
+            error_details=error_details
         )
         
     except Exception as e:
