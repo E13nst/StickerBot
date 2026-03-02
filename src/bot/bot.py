@@ -591,6 +591,8 @@ class StickerBot:
                 CommandHandler('cancel', cancel),
                 # add_to_gallery: внутри conversation — единственный путь (любое состояние). Вне conversation — см. handler ниже.
                 CallbackQueryHandler(wrapped_handle_add_to_gallery, pattern='^add_to_gallery:'),
+                # back_to_main должен работать из любого состояния (в т.ч. после inline-кнопок успеха)
+                CallbackQueryHandler(wrapped_handle_back_to_main, pattern='^back_to_main$'),
             ],
             allow_reentry=True
         )
