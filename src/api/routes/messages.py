@@ -125,10 +125,12 @@ class SendMessageRequest(BaseModel):
     user_id: Optional[int] = Field(
         None,
         description="Telegram user ID — сообщение уйдёт в личный чат. Укажите ровно один из user_id или chat_id.",
+        json_schema_extra={"format": "int64"},
     )
     chat_id: Optional[int] = Field(
         None,
         description="Telegram chat ID — для групп/каналов, где бот состоит. Укажите ровно один из user_id или chat_id.",
+        json_schema_extra={"format": "int64"},
     )
     parse_mode: Literal["MarkdownV2", "HTML", "plain"] = Field(
         "MarkdownV2",
@@ -154,8 +156,8 @@ class SendMessageResponse(BaseModel):
     """Ответ после успешной отправки сообщения."""
 
     status: Literal["sent"] = "sent"
-    chat_id: int = Field(..., description="ID чата, в который отправлено сообщение")
-    message_id: int = Field(..., description="ID отправленного сообщения в чате")
+    chat_id: int = Field(..., description="ID чата, в который отправлено сообщение", json_schema_extra={"format": "int64"})
+    message_id: int = Field(..., description="ID отправленного сообщения в чате", json_schema_extra={"format": "int64"})
     parse_mode: Optional[str] = Field(
         None,
         description="Использованный режим разметки (null для plain)",

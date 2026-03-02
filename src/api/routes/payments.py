@@ -80,7 +80,7 @@ def validate_webhook_url(url: str) -> bool:
 
 class CreateInvoiceRequest(BaseModel):
     """Запрос на создание invoice для оплаты Stars"""
-    user_id: int = Field(..., description="ID пользователя Telegram")
+    user_id: int = Field(..., description="ID пользователя Telegram", json_schema_extra={"format": "int64"})
     title: str = Field(..., min_length=1, max_length=32, description="Заголовок платежа")
     description: str = Field(..., min_length=1, max_length=255, description="Описание платежа")
     amount_stars: int = Field(..., gt=0, description="Количество Stars для списания")
