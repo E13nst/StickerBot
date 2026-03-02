@@ -128,6 +128,7 @@ from src.utils.stickerset_cache import AsyncStickerSetCache
 # Импорты для платежей
 from src.utils.invoice_storage import InvoiceStore, PaymentIdempotencyStore
 from src.services.webhook_notifier import WebhookNotifier
+from src.utils.log_sanitizer import configure_secure_logging
 
 logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
@@ -137,6 +138,7 @@ logging.basicConfig(
         RotatingFileHandler(LOG_FILE_PATH, maxBytes=1_000_000, backupCount=3)
     ]
 )
+configure_secure_logging()
 
 logger = logging.getLogger(__name__)
 

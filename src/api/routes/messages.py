@@ -1,10 +1,11 @@
 """API endpoint для отправки произвольного сообщения пользователю от имени бота."""
 import logging
-from typing import Literal, Optional
+import math
+from typing import Any, Literal, Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Request
 from pydantic import BaseModel, Field, model_validator
-from telegram.error import Forbidden, TelegramError
+from telegram.error import BadRequest, Forbidden, NetworkError, RetryAfter, TelegramError, TimedOut
 
 from src.api.routes.control import get_token_from_header
 from src.api.middleware.rate_limit import limiter
@@ -19,6 +20,90 @@ bot_instance = None
 
 # Лимит длины текста сообщения в Telegram Bot API
 TELEGRAM_MESSAGE_MAX_LENGTH = 4096
+
+
+def map_telegram_send_error(error: TelegramError) -> tuple[int, dict[str, Any]]:
+    """Нормализует Telegram ошибки отправки сообщения в API-ответ."""
+    error_msg = str(error)
+    error_lower = error_msg.lower()
+
+    if isinstance(error, RetryAfter):
+        retry_after_raw = getattr(error, "retry_after", None)
+        retry_after = math.ceil(float(retry_after_raw)) if retry_after_raw is not None else None
+        detail: dict[str, Any] = {
+            "code": "RATE_LIMITED",
+            "message": "Telegram ограничил частоту отправки. Повторите позже.",
+            "retryable": True,
+        }
+        if retry_after is not None:
+            detail["retry_after"] = retry_after
+        return 429, detail
+
+    if isinstance(error, TimedOut):
+        return 503, {
+            "code": "TELEGRAM_TIMEOUT",
+            "message": "Telegram не ответил вовремя. Попробуйте снова.",
+            "retryable": True,
+        }
+
+    if isinstance(error, Forbidden):
+        if "blocked by the user" in error_lower:
+            return 403, {
+                "code": "BOT_BLOCKED",
+                "message": "Пользователь заблокировал бота.",
+                "retryable": False,
+            }
+        return 403, {
+            "code": "NO_CHAT_ACCESS",
+            "message": "У бота нет доступа к чату.",
+            "retryable": False,
+        }
+
+    if isinstance(error, BadRequest):
+        if "chat not found" in error_lower:
+            return 400, {
+                "code": "CHAT_NOT_FOUND",
+                "message": "Чат не найден или недоступен для бота.",
+                "retryable": False,
+            }
+        if "can't parse entities" in error_lower:
+            return 400, {
+                "code": "INVALID_PARSE_MODE",
+                "message": "Некорректная разметка сообщения для выбранного parse_mode.",
+                "retryable": False,
+            }
+        return 400, {
+            "code": "TELEGRAM_BAD_REQUEST",
+            "message": "Telegram отклонил запрос на отправку сообщения.",
+            "retryable": False,
+        }
+
+    if isinstance(error, NetworkError):
+        return 503, {
+            "code": "TELEGRAM_NETWORK_ERROR",
+            "message": "Временная сетевая ошибка при обращении к Telegram.",
+            "retryable": True,
+        }
+
+    if "retry after" in error_lower or "too many requests" in error_lower:
+        return 429, {
+            "code": "RATE_LIMITED",
+            "message": "Telegram ограничил частоту отправки. Повторите позже.",
+            "retryable": True,
+        }
+
+    if "unavailable" in error_lower or "temporarily" in error_lower:
+        return 503, {
+            "code": "TELEGRAM_UNAVAILABLE",
+            "message": "Telegram временно недоступен.",
+            "retryable": True,
+        }
+
+    return 503, {
+        "code": "TELEGRAM_API_ERROR",
+        "message": "Не удалось отправить сообщение через Telegram API.",
+        "retryable": True,
+    }
 
 
 def set_bot_instance(instance):
@@ -124,31 +209,17 @@ async def send_message(
             send_kwargs["parse_mode"] = parse_mode_value
 
         message = await bot_instance.application.bot.send_message(**send_kwargs)
-    except Forbidden as e:
-        error_msg = str(e)
-        logger.warning(
-            "Forbidden sending message: %s, target_chat_id=%s",
-            error_msg,
-            target_chat_id,
-            exc_info=True,
-        )
-        raise HTTPException(
-            status_code=403,
-            detail="Cannot send message: user blocked bot or bot has no access to the chat",
-        )
     except TelegramError as e:
-        error_msg = str(e)
-        logger.error(
-            "Telegram error sending message: %s, target_chat_id=%s",
-            error_msg,
-            target_chat_id,
-            exc_info=True,
-        )
-        # 502 — ошибка со стороны Telegram; 503 — временная недоступность
-        status = 503 if "retry" in error_msg.lower() or "unavailable" in error_msg.lower() else 502
+        status, detail = map_telegram_send_error(e)
+        log_message = "Telegram error sending message: %s, target_chat_id=%s, code=%s, status=%s"
+        log_args = (e, target_chat_id, detail.get("code"), status)
+        if status in (400, 403, 429):
+            logger.warning(log_message, *log_args, exc_info=True)
+        else:
+            logger.error(log_message, *log_args, exc_info=True)
         raise HTTPException(
             status_code=status,
-            detail="Failed to send message",
+            detail=detail,
         )
     except Exception as e:
         logger.error(

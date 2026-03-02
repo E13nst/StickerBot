@@ -14,6 +14,7 @@ from src.api.routes.webhook import set_bot_instance as set_webhook_bot_instance
 from src.api.routes.payments import set_bot_instance as set_payments_bot_instance
 from src.api.routes.messages import set_bot_instance as set_messages_bot_instance
 from src.bot.bot import StickerBot
+from src.utils.log_sanitizer import configure_secure_logging
 import uvicorn
 
 # #region agent log
@@ -40,6 +41,7 @@ logging.basicConfig(
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     level=logging.INFO
 )
+configure_secure_logging()
 
 logger = logging.getLogger(__name__)
 

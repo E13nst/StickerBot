@@ -25,6 +25,7 @@ from src.api.routes.control import (
 )
 from src.api.middleware.rate_limit import limiter, _rate_limit_exceeded_handler
 from src.config.settings import WEBHOOK_PATH, WEBHOOK_RATE_LIMIT
+from src.utils.log_sanitizer import sanitize_headers
 
 logger = logging.getLogger(__name__)
 
@@ -53,7 +54,8 @@ async def log_requests(request: Request, call_next):
     
     # Специальное логирование для webhook
     if request.url.path == WEBHOOK_PATH:
-        logger.info(f"WEBHOOK запрос от IP: {client_ip}, headers: {dict(request.headers)}")
+        safe_headers = sanitize_headers(dict(request.headers))
+        logger.info("WEBHOOK запрос от IP: %s, headers: %s", client_ip, safe_headers)
     
     try:
         response = await call_next(request)
